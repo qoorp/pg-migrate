@@ -131,8 +131,7 @@ func doMigrate(url, dir string, file os.FileInfo) error {
 	if _, err := tx.InsertInto(migrationsTable).Columns("version").Values(version).Exec(); err != nil {
 		return err
 	}
-	// return tx.Commit()
-	return nil
+	return tx.Commit()
 }
 
 func getMigrateFile(version int, fos []os.FileInfo) (os.FileInfo, error) {
