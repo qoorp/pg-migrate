@@ -41,27 +41,35 @@ Options:
 	var err error
 	if arguments["up"].(bool) {
 		log.Println("up")
-		url := arguments["<url>"].(string)
-		dir := arguments["--dir"].(string)
-		var fullDir string
-		fullDir, err = filepath.Abs(dir)
-		if err != nil {
-			log.Fatalln("error:", err)
-		}
-		var steps int
-		steps, err = strconv.Atoi(arguments["--steps"].(string))
-		if err != nil {
-			log.Fatalln("error:", err)
-		}
+		url, fullDir, steps := getMigrateArgs(arguments)
 		err = upCMD(url, fullDir, steps)
 	} else if arguments["down"].(bool) {
 		log.Println("down")
+		url, fullDir, steps := getMigrateArgs(arguments)
+		err = downCMD(url, fullDir, steps)
 	} else if arguments["create"].(bool) {
 		log.Println("create")
 	}
 	if err != nil {
 		log.Fatalln("error:", err)
 	}
+}
+
+func getMigrateArgs(arguments map[string]interface{}) (string, string, int) {
+	url := arguments["<url>"].(string)
+	dir := arguments["--dir"].(string)
+	var fullDir string
+	var err error
+	fullDir, err = filepath.Abs(dir)
+	if err != nil {
+		log.Fatalln("error:", err)
+	}
+	var steps int
+	steps, err = strconv.Atoi(arguments["--steps"].(string))
+	if err != nil {
+		log.Fatalln("error:", err)
+	}
+	return url, fullDir, steps
 }
 
 func upCMD(url, dir string, steps int) error {
@@ -97,7 +105,7 @@ func upCMD(url, dir string, steps int) error {
 		if err != nil {
 			return err
 		}
-		if err := doMigrate(url, dir, f); err != nil {
+		if err := doMigrate(url, dir, f, true); err != nil {
 			return err
 		}
 	}
@@ -105,7 +113,36 @@ func upCMD(url, dir string, steps int) error {
 	return nil
 }
 
-func doMigrate(url, dir string, file os.FileInfo) error {
+func downCMD(url, dir string, steps int) error {
+	fos, err := getMigrationsFiles(dir, "down")
+	if err != nil {
+		return err
+	}
+	_ = fos
+	migratedVersions, err := getMigratedVersions(url)
+	if err != nil {
+		return err
+	}
+	log.Println(migratedVersions)
+	stepsLeft := steps
+	for _, v := range migratedVersions {
+		if stepsLeft < 1 {
+			break
+		}
+		f, err := getMigrateFile(v, fos)
+		log.Println(f)
+		if err != nil {
+			return err
+		}
+		if err := doMigrate(url, dir, f, false); err != nil {
+			return err
+		}
+		stepsLeft--
+	}
+	return nil
+}
+
+func doMigrate(url, dir string, file os.FileInfo, migrateUp bool) error {
 	log.Println("migrating:", file.Name())
 	dbConn, err := dbr.Open("postgres", url, nil)
 	if err != nil {
@@ -128,8 +165,14 @@ func doMigrate(url, dir string, file os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	if _, err := tx.InsertInto(migrationsTable).Columns("version").Values(version).Exec(); err != nil {
-		return err
+	if migrateUp {
+		if _, err := tx.InsertInto(migrationsTable).Columns("version").Values(version).Exec(); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.DeleteFrom(migrationsTable).Where(dbr.Eq("version", version)).Exec(); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
