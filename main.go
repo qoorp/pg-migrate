@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/docopt/docopt-go"
 	"github.com/gocraft/dbr"
+	"github.com/happierall/l"
 	_ "github.com/lib/pq"
 )
 
@@ -40,18 +40,21 @@ Options:
 	arguments, _ := docopt.Parse(usage, nil, true, "pg-migrate", false)
 	var err error
 	if arguments["up"].(bool) {
-		log.Println("up")
+		l.Print("migrating up...")
 		url, fullDir, steps := getMigrateArgs(arguments)
 		err = upCMD(url, fullDir, steps)
+		l.Print("done")
 	} else if arguments["down"].(bool) {
-		log.Println("down")
+		l.Print("migrating down...")
 		url, fullDir, steps := getMigrateArgs(arguments)
 		err = downCMD(url, fullDir, steps)
 	} else if arguments["create"].(bool) {
-		log.Println("create")
+		l.Print("creating new migration files...")
 	}
 	if err != nil {
-		log.Fatalln("error:", err)
+		l.Errorf("%v", err)
+	} else {
+		l.Print("Success!")
 	}
 }
 
@@ -62,18 +65,17 @@ func getMigrateArgs(arguments map[string]interface{}) (string, string, int) {
 	var err error
 	fullDir, err = filepath.Abs(dir)
 	if err != nil {
-		log.Fatalln("error:", err)
+		l.Error("error:", err)
 	}
 	var steps int
 	steps, err = strconv.Atoi(arguments["--steps"].(string))
 	if err != nil {
-		log.Fatalln("error:", err)
+		l.Error("error:", err)
 	}
 	return url, fullDir, steps
 }
 
 func upCMD(url, dir string, steps int) error {
-	log.Println(url, dir, steps)
 	fos, err := getMigrationsFiles(dir, "up")
 	if err != nil {
 		return err
@@ -99,7 +101,9 @@ func upCMD(url, dir string, steps int) error {
 		log.Println(ss)
 	*/
 	ss2 := superSet(versions, migratedVersions)
-
+	if len(ss2) == 0 {
+		l.Print("there was nothing othing to migrate")
+	}
 	for _, v := range ss2 {
 		f, err := getMigrateFile(v, fos)
 		if err != nil {
@@ -109,7 +113,6 @@ func upCMD(url, dir string, steps int) error {
 			return err
 		}
 	}
-	log.Println(ss2)
 	return nil
 }
 
@@ -123,14 +126,12 @@ func downCMD(url, dir string, steps int) error {
 	if err != nil {
 		return err
 	}
-	log.Println(migratedVersions)
 	stepsLeft := steps
 	for _, v := range migratedVersions {
 		if stepsLeft < 1 {
 			break
 		}
 		f, err := getMigrateFile(v, fos)
-		log.Println(f)
 		if err != nil {
 			return err
 		}
@@ -143,7 +144,7 @@ func downCMD(url, dir string, steps int) error {
 }
 
 func doMigrate(url, dir string, file os.FileInfo, migrateUp bool) error {
-	log.Println("migrating:", file.Name())
+	l.Printf("migrating > %s", file.Name())
 	dbConn, err := dbr.Open("postgres", url, nil)
 	if err != nil {
 		return err
