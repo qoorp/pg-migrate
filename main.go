@@ -5,8 +5,10 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docopt/docopt-go"
 	"github.com/gocraft/dbr"
@@ -19,6 +21,7 @@ const migrationsTable = "schema_migrations"
 var (
 	errMissingMigrationFilesTpl = "there are missing migration files: %v"
 	errMissingMigrationFileTpl  = "missing migration file with version: %v"
+	reMigrationName             = regexp.MustCompile("^[a-z0-9_]+$")
 )
 
 func main() {
@@ -29,7 +32,7 @@ Usage:
   pg-migrate down <url> [--dir=<dir>] [--steps=<steps>]
   pg-migrate create <name>
   pg-migrate -h | --help
-  naval_fate --version
+  pg-migrate --version
 
 Options:
   -h --help        Show help.
@@ -39,17 +42,26 @@ Options:
 `
 	arguments, _ := docopt.Parse(usage, nil, true, "pg-migrate", false)
 	var err error
+	l.Print(arguments)
 	if arguments["up"].(bool) {
 		l.Print("migrating up...")
-		url, fullDir, steps := getMigrateArgs(arguments)
-		err = upCMD(url, fullDir, steps)
-		l.Print("done")
+		url, fullDir, steps, err := getMigrateArgs(arguments)
+		if err == nil {
+			err = upCMD(url, fullDir, steps)
+		}
 	} else if arguments["down"].(bool) {
 		l.Print("migrating down...")
-		url, fullDir, steps := getMigrateArgs(arguments)
-		err = downCMD(url, fullDir, steps)
+		url, fullDir, steps, err := getMigrateArgs(arguments)
+		if err == nil {
+			err = downCMD(url, fullDir, steps)
+		}
 	} else if arguments["create"].(bool) {
 		l.Print("creating new migration files...")
+		fullDir, err := getFullDirArg(arguments)
+		if err == nil {
+			name := arguments["<name>"].(string)
+			err = createCMD(fullDir, name)
+		}
 	}
 	if err != nil {
 		l.Errorf("%v", err)
@@ -58,8 +70,7 @@ Options:
 	}
 }
 
-func getMigrateArgs(arguments map[string]interface{}) (string, string, int) {
-	url := arguments["<url>"].(string)
+func getFullDirArg(arguments map[string]interface{}) (string, error) {
 	dir := arguments["--dir"].(string)
 	var fullDir string
 	var err error
@@ -67,12 +78,37 @@ func getMigrateArgs(arguments map[string]interface{}) (string, string, int) {
 	if err != nil {
 		l.Error("error:", err)
 	}
+	return fullDir, err
+}
+
+func getMigrateArgs(arguments map[string]interface{}) (string, string, int, error) {
+	url := arguments["<url>"].(string)
+	fullDir, err := getFullDirArg(arguments)
+	if err != nil {
+		return "", "", 0, err
+	}
 	var steps int
 	steps, err = strconv.Atoi(arguments["--steps"].(string))
 	if err != nil {
 		l.Error("error:", err)
 	}
-	return url, fullDir, steps
+	return url, fullDir, steps, err
+}
+
+func createCMD(fullDir, name string) error {
+	if ok := reMigrationName.MatchString(name); !ok {
+		return fmt.Errorf("invalid migration name, must match the regexp: ^[a-z0-9_]+$")
+	}
+	epoch := strconv.FormatInt(time.Now().Unix(), 10)
+	down := filepath.Join(fullDir, epoch+"_"+name+".down.sql")
+	up := filepath.Join(fullDir, epoch+"_"+name+".up.sql")
+	if err := ioutil.WriteFile(down, []byte(""), 644); err != nil {
+		return err
+	}
+	if err := ioutil.WriteFile(up, []byte(""), 644); err != nil {
+		return err
+	}
+	return nil
 }
 
 func upCMD(url, dir string, steps int) error {
