@@ -42,7 +42,6 @@ Options:
 `
 	arguments, _ := docopt.Parse(usage, nil, true, "pg-migrate", false)
 	var err error
-	l.Print(arguments)
 	if arguments["up"].(bool) {
 		l.Print("migrating up...")
 		url, fullDir, steps, err := getMigrateArgs(arguments)
@@ -102,10 +101,12 @@ func createCMD(fullDir, name string) error {
 	epoch := strconv.FormatInt(time.Now().Unix(), 10)
 	down := filepath.Join(fullDir, epoch+"_"+name+".down.sql")
 	up := filepath.Join(fullDir, epoch+"_"+name+".up.sql")
-	if err := ioutil.WriteFile(down, []byte(""), 644); err != nil {
+	l.Print(fmt.Sprintf("%s", down))
+	if err := ioutil.WriteFile(down, []byte(""), 0644); err != nil {
 		return err
 	}
-	if err := ioutil.WriteFile(up, []byte(""), 644); err != nil {
+	l.Print(fmt.Sprintf("%s", up))
+	if err := ioutil.WriteFile(up, []byte(""), 0644); err != nil {
 		return err
 	}
 	return nil
