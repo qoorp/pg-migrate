@@ -44,20 +44,20 @@ Options:
 	var err error
 	if arguments["up"].(bool) {
 		l.Print("migrating up...")
-		url, fullDir, steps, err := getMigrateArgs(arguments)
-		if err == nil {
+		url, fullDir, steps, aErr := getMigrateArgs(arguments)
+		if aErr == nil {
 			err = upCMD(url, fullDir, steps)
 		}
 	} else if arguments["down"].(bool) {
 		l.Print("migrating down...")
-		url, fullDir, steps, err := getMigrateArgs(arguments)
-		if err == nil {
+		url, fullDir, steps, aErr := getMigrateArgs(arguments)
+		if aErr == nil {
 			err = downCMD(url, fullDir, steps)
 		}
 	} else if arguments["create"].(bool) {
 		l.Print("creating new migration files...")
-		fullDir, err := getFullDirArg(arguments)
-		if err == nil {
+		fullDir, aErr := getFullDirArg(arguments)
+		if aErr == nil {
 			name := arguments["<name>"].(string)
 			err = createCMD(fullDir, name)
 		}
