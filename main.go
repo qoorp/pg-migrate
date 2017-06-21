@@ -41,32 +41,36 @@ Options:
   --steps=<steps>  Max steps to migrate [default: -1].
 `
 	arguments, _ := docopt.Parse(usage, nil, true, "pg-migrate", false)
-	var err error
 	if arguments["up"].(bool) {
 		l.Print("migrating up...")
-		url, fullDir, steps, aErr := getMigrateArgs(arguments)
-		if aErr == nil {
-			err = upCMD(url, fullDir, steps)
+		url, fullDir, steps, err := getMigrateArgs(arguments)
+		if err == nil {
+			if err := upCMD(url, fullDir, steps); err != nil {
+				l.Error(err)
+				return
+			}
 		}
 	} else if arguments["down"].(bool) {
 		l.Print("migrating down...")
-		url, fullDir, steps, aErr := getMigrateArgs(arguments)
-		if aErr == nil {
-			err = downCMD(url, fullDir, steps)
+		url, fullDir, steps, err := getMigrateArgs(arguments)
+		if err == nil {
+			if err := downCMD(url, fullDir, steps); err != nil {
+				l.Error(err)
+				return
+			}
 		}
 	} else if arguments["create"].(bool) {
 		l.Print("creating new migration files...")
-		fullDir, aErr := getFullDirArg(arguments)
-		if aErr == nil {
+		fullDir, err := getFullDirArg(arguments)
+		if err == nil {
 			name := arguments["<name>"].(string)
-			err = createCMD(fullDir, name)
+			if err := createCMD(fullDir, name); err != nil {
+				l.Error(err)
+				return
+			}
 		}
 	}
-	if err != nil {
-		l.Errorf("%v", err)
-	} else {
-		l.Print("Success!")
-	}
+	l.Print("Success!")
 }
 
 func getFullDirArg(arguments map[string]interface{}) (string, error) {
