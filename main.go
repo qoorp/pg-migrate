@@ -38,7 +38,7 @@ Options:
   -h --help        Show help.
   --version        Show version.
   --dir=<dir>      Directory where migrations files are stores. [default: migrations/]
-  --steps=<steps>  Max steps to migrate [default: -1].
+  --steps=<steps>  Max steps to migrate [default: 1].
 `
 	arguments, _ := docopt.Parse(usage, nil, true, "pg-migrate", false)
 	if arguments["up"].(bool) {
