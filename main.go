@@ -268,19 +268,18 @@ func getVersion(filename string) (int, error) {
 	return strconv.Atoi(fs[0])
 }
 
-// Create the table. This will only happen if it does not exist.
-// Potential improvment: return the error from Exec() if it is not 'table exist'.
+// Create the table if it does not exist.
 func migrationsTableExist(url string) error {
 	dbConn, err := dbr.Open("postgres", url, nil)
 	if err != nil {
 		return err
 	}
 	sess := dbConn.NewSession(nil)
-	s := fmt.Sprintf(`CREATE TABLE %s (
+	s := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 			version bigint NOT NULL
 		)`, migrationsTable)
-	sess.Exec(s)
-	return nil
+	_, err = sess.Exec(s)
+	return err
 }
 
 func superSet(vs1, vs2 []int) (r1 []int) {
