@@ -130,6 +130,10 @@ func upCMD(url, dir string, steps int) error {
 		}
 		versions = append(versions, version)
 	}
+	err = migrationsTableExist(url)
+	if err != nil {
+		return err
+	}
 	migratedVersions, err := getMigratedVersions(url)
 	if err != nil {
 		return err
@@ -262,6 +266,21 @@ func getMigratedVersions(url string) ([]int, error) {
 func getVersion(filename string) (int, error) {
 	fs := strings.Split(filename, "_")
 	return strconv.Atoi(fs[0])
+}
+
+// Create the table. This will only happen if it does not exist.
+// Potential improvment: return the error from Exec() if it is not 'table exist'.
+func migrationsTableExist(url string) error {
+	dbConn, err := dbr.Open("postgres", url, nil)
+	if err != nil {
+		return err
+	}
+	sess := dbConn.NewSession(nil)
+	s := fmt.Sprintf(`CREATE TABLE %s (
+			version bigint NOT NULL
+		)`, migrationsTable)
+	sess.Exec(s)
+	return nil
 }
 
 func superSet(vs1, vs2 []int) (r1 []int) {
