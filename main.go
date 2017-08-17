@@ -28,9 +28,9 @@ func main() {
 	usage := `pg-migrate
 
 Usage:
-  pg-migrate up <url> [--dir=<dir>] [--steps=<steps>]
-  pg-migrate down <url> [--dir=<dir>] [--steps=<steps>]
-  pg-migrate create <name>
+  pg-migrate up <url> [--dir=<dir>] [--steps=<steps>] [--bw]
+  pg-migrate down <url> [--dir=<dir>] [--steps=<steps>] [--bw]
+  pg-migrate create <name> [--bw]
   pg-migrate -h | --help
   pg-migrate --version
 
@@ -39,8 +39,12 @@ Options:
   --version        Show version.
   --dir=<dir>      Directory where migrations files are stores. [default: migrations/]
   --steps=<steps>  Max steps to migrate [default: 1].
+  --bw        No colour (black and white).
 `
 	arguments, _ := docopt.Parse(usage, nil, true, "pg-migrate", false)
+	if arguments["--bw"].(bool) {
+		l.Default.Production = true
+	}
 	if arguments["up"].(bool) {
 		l.Print("migrating up...")
 		url, fullDir, steps, err := getMigrateArgs(arguments)
@@ -147,7 +151,7 @@ func upCMD(url, dir string, steps int) error {
 	*/
 	ss2 := superSet(versions, migratedVersions)
 	if len(ss2) == 0 {
-		l.Print("there was nothing othing to migrate")
+		l.Print("there was nothing to migrate")
 	}
 	for _, v := range ss2 {
 		f, err := getMigrateFile(v, fos)
