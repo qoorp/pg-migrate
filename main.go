@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/docopt/docopt-go"
-	"github.com/gocraft/dbr"
+	"github.com/wilonth/dbr"
 	"github.com/happierall/l"
 	_ "github.com/lib/pq"
 )
