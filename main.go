@@ -153,7 +153,11 @@ func upCMD(url, dir string, steps int) error {
 	if len(ss2) == 0 {
 		l.Print("there was nothing to migrate")
 	}
+	stepsLeft := steps
 	for _, v := range ss2 {
+		if stepsLeft < 1 {
+			break
+		}
 		f, err := getMigrateFile(v, fos)
 		if err != nil {
 			return err
@@ -161,6 +165,7 @@ func upCMD(url, dir string, steps int) error {
 		if err := doMigrate(url, dir, f, true); err != nil {
 			return err
 		}
+		stepsLeft--
 	}
 	return nil
 }
