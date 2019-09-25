@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/docopt/docopt-go"
-	"github.com/wilonth/dbr"
 	"github.com/happierall/l"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/wilonth/dbr"
 )
 
 const migrationsTable = "schema_migrations"
@@ -28,8 +29,8 @@ func main() {
 	usage := `pg-migrate
 
 Usage:
-  pg-migrate up <url> [--dir=<dir>] [--steps=<steps>] [--bw]
-  pg-migrate down <url> [--dir=<dir>] [--steps=<steps>] [--bw]
+  pg-migrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw]
+  pg-migrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw]
   pg-migrate create <name> [--bw]
   pg-migrate -h | --help
   pg-migrate --version
@@ -41,6 +42,10 @@ Options:
   --steps=<steps>  Max steps to migrate [default: 1].
   --bw        No colour (black and white).
 `
+	err := godotenv.Load()
+	if err != nil {
+		l.Warn("no .env file")
+	}
 	arguments, _ := docopt.Parse(usage, nil, true, "pg-migrate", false)
 	if arguments["--bw"].(bool) {
 		l.Default.Production = true
@@ -53,6 +58,9 @@ Options:
 				l.Error(err)
 				return
 			}
+		} else {
+			l.Error(err)
+			return
 		}
 	} else if arguments["down"].(bool) {
 		l.Print("migrating down...")
@@ -62,6 +70,9 @@ Options:
 				l.Error(err)
 				return
 			}
+		} else {
+			l.Error(err)
+			return
 		}
 	} else if arguments["create"].(bool) {
 		l.Print("creating new migration files...")
@@ -72,6 +83,9 @@ Options:
 				l.Error(err)
 				return
 			}
+		} else {
+			l.Error(err)
+			return
 		}
 	}
 	l.Print("Success!")
@@ -89,7 +103,13 @@ func getFullDirArg(arguments map[string]interface{}) (string, error) {
 }
 
 func getMigrateArgs(arguments map[string]interface{}) (string, string, int, error) {
-	url := arguments["<url>"].(string)
+	url := os.Getenv("DATABASE_URL")
+	if u, found := arguments["<url>"]; found {
+		url = u.(string)
+	}
+	if url == "" {
+		return "", "", 0, fmt.Errorf("no url provided")
+	}
 	fullDir, err := getFullDirArg(arguments)
 	if err != nil {
 		return "", "", 0, err
