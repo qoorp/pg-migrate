@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -17,7 +19,7 @@ import (
 	"github.com/wilonth/dbr"
 )
 
-const migrationsTable = "schema_migrations"
+const migrationsTable = "pgmigrate"
 
 var (
 	errMissingMigrationFilesTpl = "there are missing migration files: %v"
@@ -32,13 +34,16 @@ Usage:
   pg-migrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw]
   pg-migrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw]
   pg-migrate create <name> [--bw]
+  pg-migrate dump
+  pg-migrate load [--dir=<dir>]
+  pg-migrate seed [--dir=<dir>]
   pg-migrate -h | --help
   pg-migrate --version
 
 Options:
   -h --help        Show help.
   --version        Show version.
-  --dir=<dir>      Directory where migrations files are stores. [default: migrations/]
+  --dir=<dir>      Directory where migrations files are stores. [default: pgmigrate/]
   --steps=<steps>  Max steps to migrate [default: 1].
   --bw        No colour (black and white).
 `
@@ -84,6 +89,40 @@ Options:
 				return
 			}
 		} else {
+			l.Error(err)
+			return
+		}
+	} else if arguments["dump"].(bool) {
+		l.Print("dumping sql...")
+		url, dir, _, err := getMigrateArgs(arguments)
+		if err == nil {
+			if err := dumpCMD(url, dir); err != nil {
+				l.Error(err)
+				return
+			}
+		} else {
+			l.Error(err)
+			return
+		}
+	} else if arguments["load"].(bool) {
+		l.Print("loading sql...")
+		url, dir, _, err := getMigrateArgs(arguments)
+		if err != nil {
+			l.Error(err)
+			return
+		}
+		if err := loadCMD(url, dir); err != nil {
+			l.Error(err)
+			return
+		}
+	} else if arguments["seed"].(bool) {
+		l.Print("seeding db...")
+		url, dir, _, err := getMigrateArgs(arguments)
+		if err != nil {
+			l.Error(err)
+			return
+		}
+		if err := seedCMD(url, dir); err != nil {
 			l.Error(err)
 			return
 		}
@@ -217,8 +256,32 @@ func downCMD(url, dir string, steps int) error {
 	return nil
 }
 
-func doMigrate(url, dir string, file os.FileInfo, migrateUp bool) error {
-	l.Printf("migrating > %s", file.Name())
+func dumpCMD(url, dir string) error {
+	cmd := exec.Command("pg_dump", url, "-s", "-O")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	outFilePath := filepath.Join(dir, fmt.Sprintf("dump_%d.sql", time.Now().Unix()))
+	l.Printf("writing dump to %s", outFilePath)
+	err := ioutil.WriteFile(outFilePath, out.Bytes(), 0644)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func loadCMD(url, dir string) error {
+	l.Printf("loading > %s/schema.sql", dir)
+	return execFile(url, dir, "schema.sql", nil)
+}
+
+func seedCMD(url, dir string) error {
+	return execFile(url, dir, "seeds.sql", nil)
+}
+
+func execFile(url, dir, fileName string, cb func(tx *dbr.Tx) error) error {
 	dbConn, err := dbr.Open("postgres", url, nil)
 	if err != nil {
 		return err
@@ -229,27 +292,39 @@ func doMigrate(url, dir string, file os.FileInfo, migrateUp bool) error {
 		return err
 	}
 	defer tx.RollbackUnlessCommitted()
-	content, err := ioutil.ReadFile(filepath.Join(dir, file.Name()))
+	content, err := ioutil.ReadFile(filepath.Join(dir, fileName))
 	if err != nil {
 		return err
 	}
 	if _, err := tx.Exec(string(content)); err != nil {
 		return err
 	}
-	version, err := getVersion(file.Name())
-	if err != nil {
-		return err
-	}
-	if migrateUp {
-		if _, err := tx.InsertInto(migrationsTable).Columns("version").Values(version).Exec(); err != nil {
-			return err
-		}
-	} else {
-		if _, err := tx.DeleteFrom(migrationsTable).Where(dbr.Eq("version", version)).Exec(); err != nil {
+	if cb != nil {
+		if err := cb(tx); err != nil {
 			return err
 		}
 	}
 	return tx.Commit()
+}
+
+func doMigrate(url, dir string, file os.FileInfo, migrateUp bool) error {
+	l.Printf("migrating > %s", file.Name())
+	return execFile(url, dir, file.Name(), func(tx *dbr.Tx) error {
+		version, err := getVersion(file.Name())
+		if err != nil {
+			return err
+		}
+		if migrateUp {
+			if _, err := tx.InsertInto(migrationsTable).Columns("version").Values(version).Exec(); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.DeleteFrom(migrationsTable).Where(dbr.Eq("version", version)).Exec(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func getMigrateFile(version int, fos []os.FileInfo) (os.FileInfo, error) {
