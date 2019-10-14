@@ -3,20 +3,21 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/docopt/docopt-go"
+	"github.com/gocraft/dbr"
+	"github.com/happierall/l"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"golang.org/x/text/unicode/norm"
 	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/docopt/docopt-go"
-	"github.com/happierall/l"
-	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
-	"github.com/wilonth/dbr"
 )
 
 const migrationsTable = "pgmigrate"
@@ -180,18 +181,9 @@ func createCMD(fullDir, name string) error {
 }
 
 func upCMD(url, dir string, steps int) error {
-	fos, err := getMigrationsFiles(dir, "up")
+	migrations, err := getAllMigrations(dir)
 	if err != nil {
 		return err
-	}
-	_ = fos
-	var versions []int
-	for _, fo := range fos {
-		version, err := getVersion(fo.Name())
-		if err != nil {
-			return err
-		}
-		versions = append(versions, version)
 	}
 	err = migrationsTableExist(url)
 	if err != nil {
@@ -201,28 +193,17 @@ func upCMD(url, dir string, steps int) error {
 	if err != nil {
 		return err
 	}
-	/*
-		ss := superSet(migratedVersions, versions)
-		if len(ss) > 0 {
-			return fmt.Errorf(errMissingMigrationFilesTpl, ss)
-		}
-		log.Println(ss)
-	*/
-	ss2 := superSet(versions, migratedVersions)
+	ss2 := superSet(migrations, migratedVersions)
 	if len(ss2) == 0 {
 		l.Print("there was nothing to migrate")
 	}
 	stepsLeft := steps
-	for _, v := range ss2 {
+	for _, m := range ss2 {
 		if stepsLeft < 1 {
 			break
 		}
-		f, err := getMigrateFile(v, fos)
-		if err != nil {
-			return err
-		}
-		if err := doMigrate(url, dir, f, true); err != nil {
-			return err
+		if err := doMigrate(url, m, true); err != nil {
+
 		}
 		stepsLeft--
 	}
@@ -230,11 +211,9 @@ func upCMD(url, dir string, steps int) error {
 }
 
 func downCMD(url, dir string, steps int) error {
-	fos, err := getMigrationsFiles(dir, "down")
-	if err != nil {
+	if err := migrationsTableExist(url); err != nil {
 		return err
 	}
-	_ = fos
 	migratedVersions, err := getMigratedVersions(url)
 	if err != nil {
 		return err
@@ -244,11 +223,7 @@ func downCMD(url, dir string, steps int) error {
 		if stepsLeft < 1 {
 			break
 		}
-		f, err := getMigrateFile(v, fos)
-		if err != nil {
-			return err
-		}
-		if err := doMigrate(url, dir, f, false); err != nil {
+		if err := doMigrate(url, v, false); err != nil {
 			return err
 		}
 		stepsLeft--
@@ -272,16 +247,33 @@ func dumpCMD(url, dir string) error {
 	return nil
 }
 
+func getFileContents(dir, fileName string) (string, error) {
+	cb, err := ioutil.ReadFile(filepath.Join(dir, fileName))
+	if err != nil {
+		return "", err
+	}
+	return norm.NFC.String(strings.TrimSpace(string(cb))), nil
+}
+
 func loadCMD(url, dir string) error {
 	l.Printf("loading > %s/schema.sql", dir)
-	return execFile(url, dir, "schema.sql", nil)
+	schema, err := getFileContents(dir, "schema.sql")
+	if err != nil {
+		return err
+	}
+	return execString(url, schema, nil)
 }
 
 func seedCMD(url, dir string) error {
-	return execFile(url, dir, "seeds.sql", nil)
+	l.Printf("loading > %s/seeds.sql", dir)
+	seeds, err := getFileContents(dir, "seeds.sql")
+	if err != nil {
+		return err
+	}
+	return execString(url, seeds, nil)
 }
 
-func execFile(url, dir, fileName string, cb func(tx *dbr.Tx) error) error {
+func execString(url, contents string, cb func(tx *dbr.Tx) error) error {
 	dbConn, err := dbr.Open("postgres", url, nil)
 	if err != nil {
 		return err
@@ -292,11 +284,8 @@ func execFile(url, dir, fileName string, cb func(tx *dbr.Tx) error) error {
 		return err
 	}
 	defer tx.RollbackUnlessCommitted()
-	content, err := ioutil.ReadFile(filepath.Join(dir, fileName))
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec(string(content)); err != nil {
+
+	if _, err := tx.Exec(string(contents)); err != nil {
 		return err
 	}
 	if cb != nil {
@@ -307,19 +296,24 @@ func execFile(url, dir, fileName string, cb func(tx *dbr.Tx) error) error {
 	return tx.Commit()
 }
 
-func doMigrate(url, dir string, file os.FileInfo, migrateUp bool) error {
-	l.Printf("migrating > %s", file.Name())
-	return execFile(url, dir, file.Name(), func(tx *dbr.Tx) error {
-		version, err := getVersion(file.Name())
-		if err != nil {
-			return err
-		}
+func doMigrate(url string, mig *migration, migrateUp bool) error {
+	l.Printf("migrating > %s", mig.Name)
+	contents := mig.Up
+	if !migrateUp {
+		contents = mig.Down
+	}
+	return execString(url, contents, func(tx *dbr.Tx) error {
 		if migrateUp {
-			if _, err := tx.InsertInto(migrationsTable).Columns("version").Values(version).Exec(); err != nil {
+			if _, err := tx.InsertInto(migrationsTable).
+				Columns("version", "name", "up", "down").
+				Values(mig.Version, mig.Name, mig.Up, mig.Down).
+				Exec(); err != nil {
 				return err
 			}
 		} else {
-			if _, err := tx.DeleteFrom(migrationsTable).Where(dbr.Eq("version", version)).Exec(); err != nil {
+			if _, err := tx.DeleteFrom(migrationsTable).
+				Where(dbr.Eq("version", mig.Version)).
+				Exec(); err != nil {
 				return err
 			}
 		}
@@ -327,49 +321,95 @@ func doMigrate(url, dir string, file os.FileInfo, migrateUp bool) error {
 	})
 }
 
-func getMigrateFile(version int, fos []os.FileInfo) (os.FileInfo, error) {
+func getCurrentMigrationFiles(version int, fos []os.FileInfo) []os.FileInfo {
+	files := []os.FileInfo{}
 	for _, fo := range fos {
 		if strings.HasPrefix(fo.Name(), strconv.Itoa(version)) {
-			return fo, nil
+			files = append(files, fo)
 		}
 	}
-	return nil, fmt.Errorf(errMissingMigrationFileTpl, version)
+	return files
 }
 
-func getMigrationsFiles(dir, direction string) ([]os.FileInfo, error) {
+func getAllMigrations(dir string) ([]*migration, error) {
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	var fos []os.FileInfo
+	reg := regexp.MustCompilePOSIX("^.*(up|down).sql$")
+	migMap := map[uint64]*migration{}
 	for _, fo := range files {
 		if fo.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(fo.Name(), fmt.Sprintf(".%s.sql", direction)) {
+		sm := reg.FindStringSubmatch(fo.Name())
+		if len(sm) != 2 {
 			continue
 		}
-		fos = append(fos, fo)
+		direction := sm[1]
+		version, err := getVersion(fo.Name())
+		if err != nil {
+			return nil, err
+		}
+		contents, err := getFileContents(dir, fo.Name())
+		migNameParts := strings.Split(fo.Name(), ".")
+		migrationName := strings.Join(migNameParts[0:len(migNameParts)-2], ".")
+		if m, found := migMap[version]; found {
+			if direction == "up" {
+				m.Up = contents
+			} else {
+				m.Down = contents
+			}
+		} else {
+			m := &migration{
+				Version: version,
+				Name:    migrationName,
+			}
+			if direction == "up" {
+				m.Up = contents
+			} else {
+				m.Down = contents
+			}
+			migMap[version] = m
+		}
 	}
-	return fos, nil
+	migrations := []*migration{}
+	for _, m := range migMap {
+		migrations = append(migrations, m)
+	}
+	sort.Sort(ByVersion(migrations))
+	return migrations, nil
 }
 
-func getMigratedVersions(url string) ([]int, error) {
+type migration struct {
+	Version uint64 `db:"version"`
+	Name    string `db:"name"`
+	Up      string `db:"up"`
+	Down    string `db:"down"`
+}
+
+type ByVersion []*migration
+
+func (a ByVersion) Len() int           { return len(a) }
+func (a ByVersion) Less(i, j int) bool { return a[i].Version < a[j].Version }
+func (a ByVersion) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
+func getMigratedVersions(url string) ([]*migration, error) {
 	dbConn, err := dbr.Open("postgres", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	sess := dbConn.NewSession(nil)
-	var versions []int
-	if _, err := sess.Select("version").From(migrationsTable).OrderDir("version", false).LoadValues(&versions); err != nil {
+	migrations := []*migration{}
+	if _, err := sess.Select("*").From(migrationsTable).OrderDir("version", false).Load(&migrations); err != nil {
 		return nil, err
 	}
-	return versions, nil
+	return migrations, nil
 }
 
-func getVersion(filename string) (int, error) {
+func getVersion(filename string) (uint64, error) {
 	fs := strings.Split(filename, "_")
-	return strconv.Atoi(fs[0])
+	return strconv.ParseUint(fs[0], 10, 64)
 }
 
 // Create the table if it does not exist.
@@ -379,18 +419,21 @@ func migrationsTableExist(url string) error {
 		return err
 	}
 	sess := dbConn.NewSession(nil)
-	s := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			version bigint NOT NULL
+	s := fmt.Sprintf(`create table if not exists %s (
+			version bigint not null primary key,
+			name text not null default '',
+			up text not null default '',
+			down text not null default ''
 		)`, migrationsTable)
 	_, err = sess.Exec(s)
 	return err
 }
 
-func superSet(vs1, vs2 []int) (r1 []int) {
+func superSet(vs1, vs2 []*migration) (r1 []*migration) {
 	for _, i := range vs1 {
 		found := false
 		for _, j := range vs2 {
-			if i == j {
+			if i.Version == j.Version {
 				found = true
 				continue
 			}
