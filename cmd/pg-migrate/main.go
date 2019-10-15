@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/Preciselyco/pg-migrate"
+	pgmigrate "github.com/Preciselyco/pg-migrate"
 	"github.com/docopt/docopt-go"
 	"github.com/happierall/l"
 	"github.com/joho/godotenv"
@@ -21,10 +21,10 @@ Usage:
   pg-migrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw]
   pg-migrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] 
   pg-migrate create <name> [--bw]
-  pg-migrate dump-schema
-  pg-migrate dump-full
+  pg-migrate dump-schema [--dir=<dir>]
+  pg-migrate dump-full [--dir=<dir>]
   pg-migrate load-schema [--dir=<dir>]
-  pg-migrate load-dump <name>
+  pg-migrate load-dump <name> [--dir=<dir>]
   pg-migrate seed [--dir=<dir>]
   pg-migrate -h | --help
   pg-migrate --version
