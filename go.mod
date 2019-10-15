@@ -1,4 +1,4 @@
-module github.com/Preciselyco/pg-migrate/lib
+module github.com/Preciselyco/pg-migrate
 
 go 1.13
 
