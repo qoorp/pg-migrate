@@ -27,11 +27,17 @@ func (ctx *PGMigrate) Finish() error {
 	return ctx.finish()
 }
 
+// CreateDB ensures that the database specified in the postgres url
+// exists. If not it creates it. This probably won't work if you don't have
+// full access to the postgres server.
 func (ctx *PGMigrate) CreateDB(cb ConfirmCB) error {
 	ctx.dbg("CreateDB")
 	return ctx.dbEnsureDBExists(cb)
 }
 
+// DropDB drops the database specified in the postgres url.
+// This probably won't work if you don't have full access to
+// the postgres server.
 func (ctx *PGMigrate) DropDB(cb ConfirmCB) error {
 	ctx.dbg("DropDB")
 	return ctx.dbDropDB(cb)
