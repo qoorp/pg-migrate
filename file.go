@@ -1,12 +1,24 @@
 package pgmigrate
 
 import (
+	"fmt"
 	"golang.org/x/text/unicode/norm"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 )
+
+func (ctx *PGMigrate) fileEnsureDirExist(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		ctx.dbg("fileEnsureDirExists", fmt.Sprintf("directory '%s' does not exist, creating", path))
+		if err := os.MkdirAll(path, 0755); err != nil {
+			ctx.dbg("fileEnsureExists", err)
+			return err
+		}
+	}
+	return nil
+}
 
 func (ctx *PGMigrate) fileGetContents(fileName string) (string, error) {
 	fp := filepath.Join(ctx.config.BaseDirectory, fileName)
@@ -22,13 +34,8 @@ func (ctx *PGMigrate) fileGetContents(fileName string) (string, error) {
 func (ctx *PGMigrate) fileWriteContents(fileName string, contents []byte) error {
 	fp := filepath.Join(ctx.config.BaseDirectory, fileName)
 	ctx.dbg("fileWriteContents", fp)
-	if _, err := os.Stat(ctx.config.BaseDirectory); os.IsNotExist(err) {
-		ctx.dbg("fileWriteContents", "base directory does not exist. creating.")
-		if err := os.MkdirAll(ctx.config.BaseDirectory, os.ModeDir); err != nil {
-			ctx.dbg("fileWriteContents", err)
-			return err
-		}
-		ctx.dbg("fileWriteContents", "ok")
+	if err := ctx.fileEnsureDirExist(ctx.config.BaseDirectory); err != nil {
+		return err
 	}
 	return ioutil.WriteFile(fp, contents, 0644)
 }
