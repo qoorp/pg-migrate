@@ -1,112 +1,156 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	pgmigrate "github.com/Preciselyco/pg-migrate"
 	"github.com/docopt/docopt-go"
-	"github.com/happierall/l"
+	"github.com/fatih/color"
 	"github.com/joho/godotenv"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 var arguments = map[string]interface{}{}
-var logger = l.New()
+var logger = newCmdLogger()
+var bw = false
+
+const (
+	argURL    = "--url"
+	argDIR    = "--dir"
+	argName   = "--name"
+	argSteps  = "--steps"
+	argBW     = "--bw"
+	argDryRun = "-d"
+
+	confirmY       = "y"
+	confirmPainful = "yes-i-am-really-really-sure"
+)
+
+var cmdKeys = []string{"create-db", "drop-db", "up", "down", "sync", "create", "dump-schema", "dump-full", "load-schema", "load-dump", "seed"}
+
+var cmds = map[string]struct {
+	f func() error
+	d string
+}{
+	"create-db":   {f: createDbCMD, d: "initializing db"},
+	"drop-db":     {f: dropDbCMD, d: "dropping database"},
+	"up":          {f: upCMD, d: "migrating up"},
+	"down":        {f: downCMD, d: "migrating down"},
+	"sync":        {f: syncCMD, d: "syncing database and filesystem"},
+	"create":      {f: createCMD, d: "creating migration files"},
+	"dump-schema": {f: dumpSchemaCMD, d: "dumping database schema"},
+	"dump-full":   {f: dumpFullCMD, d: "dumping database and content"},
+	"load-schema": {f: loadSchemaCMD, d: "loading database schema"},
+	"load-dump":   {f: loadDumpCMD, d: "loading database dump"},
+	"seed":        {f: seedCMD, d: "seeding database"},
+}
 
 func main() {
 	usage := `pg-migrate
 
 Usage:
-  pg-migrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw]
-  pg-migrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] 
-  pg-migrate create <name> [--bw]
-  pg-migrate dump-schema [--dir=<dir>]
-  pg-migrate dump-full [--dir=<dir>]
-  pg-migrate load-schema [--dir=<dir>]
-  pg-migrate load-dump <name> [--dir=<dir>]
-  pg-migrate seed [--dir=<dir>]
+  pg-migrate create-db [--url=<url>] [--bw]
+  pg-migrate drop-db [--url=<url>] [--bw]
+  pg-migrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
+  pg-migrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
+  pg-migrate sync [--url=<url>] [--dir=<dir>] [--bw] [-d]
+  pg-migrate create <name> [--dir=<dir>] [--bw] [-d]
+  pg-migrate dump-schema [--dir=<dir>] [--name=<name>] [--bw]
+  pg-migrate dump-full [--dir=<dir>] [--name=<name>] [--bw]
+  pg-migrate load-schema [--dir=<dir>] [--name=<name>] [--bw] [-d]
+  pg-migrate load-dump <name> [--dir=<dir>] [--name=<name>] [--bw] [-d]
+  pg-migrate seed [--dir=<dir>] [--name=<name>] [--bw] [-d]
   pg-migrate -h | --help
-  pg-migrate --version
 
 Options:
   -h --help        Show help.
   --version        Show version.
   --dir=<dir>      Directory where migrations files are stores. [default: pgmigrate/]
   --steps=<steps>  Max steps to migrate [default: 1].
-  --bw             No colour (black and white).
+  --bw             No colour (black and white). [default false]
+  -d               Dry run. [default: false]
 `
+	arguments, _ = docopt.ParseDoc(usage)
+	bw = arguments[argBW].(bool)
 	err := godotenv.Load()
 	if err != nil {
-		l.Warn("no .env file")
+		logger.Warn("No .env file loaded")
 	}
-	arguments, _ = docopt.ParseDoc(usage)
-	if arguments["--bw"].(bool) {
-		logger.Production = true
-	}
-	if arguments["up"].(bool) {
-		logger.Print("migrating up...")
-		if err := upCMD(); err != nil {
-			logger.Error(err)
-			return
-		}
-	} else if arguments["down"].(bool) {
-		logger.Print("migrating down...")
-		if err := downCMD(); err != nil {
-			logger.Error(err)
-			return
-		}
-	} else if arguments["create"].(bool) {
-		logger.Print("creating new migration files...")
-		migrationName, ok := arguments["<name>"].(string)
-		if !ok {
-			logger.Error("could parse migration name to string")
-			return
-		}
-		if err := createCMD(migrationName); err != nil {
-			logger.Error(err)
-			return
-		}
-	} else if arguments["dump-schema"].(bool) {
-		logger.Print("dumping database schema...")
-		if err := dumpSchemaCMD(); err != nil {
-			logger.Error(err)
-			return
-		}
-	} else if arguments["dump-full"].(bool) {
-		logger.Print("dumping full db...")
-		if err := dumpFullCMD(); err != nil {
-			logger.Error(err)
-			return
-		}
-	} else if arguments["load-schema"].(bool) {
-		logger.Print("loading sql schema...")
-		if err := loadSchemaCMD(); err != nil {
-			logger.Error(err)
-			return
-		}
-	} else if arguments["load-dump"].(bool) {
-		dumpName := arguments["<name>"].(string)
-		if err := loadDumpCMD(dumpName); err != nil {
-			logger.Error(err)
-			return
-		}
-	} else if arguments["seed"].(bool) {
-		logger.Print("seeding db...")
-		if err := seedCMD(); err != nil {
-			logger.Error(err)
-			return
+	for _, k := range cmdKeys {
+		if c, ok := arguments[k].(bool); c && ok {
+			if cmd, found := cmds[k]; found {
+				logger.Printf("%s", cmd.d+"...")
+				if err := cmd.f(); err != nil {
+					logger.Error(err)
+				}
+			} else {
+				logger.Error(fmt.Sprintf("command: '%s' not implemented", k))
+			}
+		} else if !c && !ok {
+			logger.Error(fmt.Sprintf("command: '%s' not implemented", k))
 		}
 	}
-	logger.Print("Success!")
+	logger.Ok("Success!")
+}
+
+type cmdLogger struct{}
+
+func newCmdLogger() *cmdLogger {
+	return &cmdLogger{}
+}
+
+func (l *cmdLogger) Printf(format string, args ...interface{}) {
+	fmt.Printf(format, args...)
+}
+
+func (l *cmdLogger) printFEach(c func(string, ...interface{}), format string, args ...interface{}) {
+	for _, v := range args {
+		if bw || c == nil {
+			l.Printf(format, v)
+		} else {
+			c(format, v)
+		}
+	}
+}
+
+func (l *cmdLogger) Print(args ...interface{}) {
+	l.printFEach(nil, "%v\n", args...)
+}
+
+func (l *cmdLogger) Error(args ...interface{}) {
+	l.printFEach(color.Red, "ERROR: %v\n", args...)
+}
+
+func (l *cmdLogger) Warn(args ...interface{}) {
+	l.printFEach(color.Yellow, "%v\n", args...)
+}
+
+func (l *cmdLogger) Inf(args ...interface{}) {
+	l.printFEach(color.Cyan, "%v\n", args...)
+}
+
+func (l *cmdLogger) Ok(args ...interface{}) {
+	l.printFEach(color.Green, "%v\n", args...)
+}
+
+func (l *cmdLogger) DBG(args ...interface{}) {
+	l.printFEach(color.Magenta, "DBG: %v\n", args...)
 }
 
 func getSteps() int {
-	steps, err := strconv.Atoi(arguments["--steps"].(string))
-	if err != nil {
-		return 1
+	if sVal, ok := arguments[argSteps].(string); ok {
+		steps, err := strconv.Atoi(sVal)
+		if err != nil {
+			// gratuitous goto
+			goto return_one
+		}
+		return steps
 	}
-	return steps
+return_one:
+	return 1
 }
 
 func getEnvOrDefaultBool(envKey string, def bool) bool {
@@ -117,20 +161,50 @@ func getEnvOrDefaultBool(envKey string, def bool) bool {
 	return v
 }
 
+func confirmCB(expected string, simple bool) func(prompt string) bool {
+	return func(prompt string) bool {
+		reader := bufio.NewReader(os.Stdin)
+		replacement := ""
+		replacer := strings.NewReplacer(
+			"\r\n", replacement,
+			"\r", replacement,
+			"\n", replacement,
+			"\v", replacement,
+			"\f", replacement,
+			"\u0085", replacement,
+			"\u2028", replacement,
+			"\u2029", replacement,
+		)
+		if simple {
+			logger.Warn(fmt.Sprintf("%s: [y/N] ", prompt))
+			text, _ := reader.ReadString('\n')
+			if text == "" {
+				return false
+			}
+			return replacer.Replace(strings.ToLower(text)) == expected
+		}
+		logger.Warn(fmt.Sprintf("%s: [%s/N] ", prompt, expected))
+		text, _ := reader.ReadString('\n')
+		return replacer.Replace(text) == expected
+	}
+}
+
 func getConfig() (pgmigrate.Config, error) {
+	//FIXME: remove
+	fmt.Printf("%+v\n", arguments)
 	cfg := pgmigrate.Config{}
 	cfg.DBUrl = os.Getenv("PGM_DATABASE_URL")
-	if u, found := arguments["<url>"]; found {
-		cfg.DBUrl = u.(string)
+	if u, ok := arguments[argURL].(string); ok {
+		cfg.DBUrl = u
 	}
 	if cfg.DBUrl == "" {
 		return cfg, fmt.Errorf("no database url provided")
 	}
 	cfg.BaseDirectory = os.Getenv("PGM_BASE_DIRECTORY")
-	if d, found := arguments["--dir"]; found {
+	if d, ok := arguments[argDIR].(string); ok {
 		var fullDir string
 		var err error
-		fullDir, err = filepath.Abs(d.(string))
+		fullDir, err = filepath.Abs(d)
 		if err != nil {
 			return cfg, fmt.Errorf("could not get full path dir: %v", err)
 		}
@@ -140,22 +214,53 @@ func getConfig() (pgmigrate.Config, error) {
 	cfg.AllInOneTx = getEnvOrDefaultBool("PGM_ALL_IN_ONE_TX", false)
 	cfg.Logger = logger
 	cfg.MigrationsTable = os.Getenv("PGM_MIGRATIONS_TABLE")
+	cfg.DryRun = false
+	if dr, ok := arguments[argDryRun].(bool); ok {
+		cfg.DryRun = dr
+	}
+	fmt.Printf("%+v\n", cfg)
+	fmt.Printf("%+v\n", logger)
 	return cfg, nil
 }
 
 func getConfigOrDie() pgmigrate.Config {
 	cfg, err := getConfig()
 	if err != nil {
-		l.Error("could not get a valid config")
-		l.Error(err)
+		logger.Error("could not get a valid config")
+		logger.Error(err)
 		os.Exit(-1)
 	}
 	return cfg
 }
 
-func createCMD(name string) error {
+func getArgStringOrNil(key string) *string {
+	if d, found := arguments[key]; found {
+		if dVal, ok := d.(string); ok {
+			val := new(string)
+			*val = dVal
+			return val
+		}
+	}
+	return nil
+}
+
+func createDbCMD() error {
 	ctx := pgmigrate.New(getConfigOrDie())
-	return ctx.CreateMigration(name)
+	return ctx.CreateDB(confirmCB(confirmY, true))
+}
+
+func dropDbCMD() error {
+	ctx := pgmigrate.New(getConfigOrDie())
+	return ctx.DropDB(confirmCB(confirmPainful, false))
+}
+
+func createCMD() error {
+	ctx := pgmigrate.New(getConfigOrDie())
+	name := getArgStringOrNil("<name>")
+	if name == nil {
+		return fmt.Errorf("<name> required")
+	}
+	return ctx.CreateMigration(*name)
 }
 
 func upCMD() error {
@@ -176,27 +281,42 @@ func downCMD() error {
 	return ctx.Finish()
 }
 
-func dumpSchemaCMD() error {
+func syncCMD() error {
 	ctx := pgmigrate.New(getConfigOrDie())
-	return ctx.DumpDBSchemaToFile()
+	return ctx.Sync()
+}
+
+func dumpSchemaCMD() error {
+	fileName := getArgStringOrNil(argName)
+	ctx := pgmigrate.New(getConfigOrDie())
+	return ctx.DumpDBSchemaToFile(fileName)
 }
 
 func dumpFullCMD() error {
+	fileName := getArgStringOrNil(argName)
 	ctx := pgmigrate.New(getConfigOrDie())
-	return ctx.DumpDBFull()
+	return ctx.DumpDBFull(fileName)
 }
 
 func loadSchemaCMD() error {
 	ctx := pgmigrate.New(getConfigOrDie())
-	if err := ctx.MigrateFromFile("schema.sql"); err != nil {
+	fileName := "schema.sql"
+	if fn := getArgStringOrNil(argName); fn != nil {
+		fileName = *fn
+	}
+	if err := ctx.MigrateFromFile(fileName); err != nil {
 		return err
 	}
 	return ctx.Finish()
 }
 
-func loadDumpCMD(dumpName string) error {
+func loadDumpCMD() error {
 	ctx := pgmigrate.New(getConfigOrDie())
-	if err := ctx.LoadFullDump(dumpName); err != nil {
+	dumpName := getArgStringOrNil("<name>")
+	if dumpName == nil {
+		return fmt.Errorf("<name> required")
+	}
+	if err := ctx.LoadFullDump(*dumpName); err != nil {
 		return err
 	}
 	return ctx.Finish()
@@ -204,7 +324,11 @@ func loadDumpCMD(dumpName string) error {
 
 func seedCMD() error {
 	ctx := pgmigrate.New(getConfigOrDie())
-	if err := ctx.MigrateFromFile("seeds.sql"); err != nil {
+	fileName := "seeds.sql"
+	if fn := getArgStringOrNil(argName); fn != nil {
+		fileName = *fn
+	}
+	if err := ctx.MigrateFromFile(fileName); err != nil {
 		return err
 	}
 	return ctx.Finish()
