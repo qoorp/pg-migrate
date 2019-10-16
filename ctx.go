@@ -2,13 +2,16 @@ package pgmigrate
 
 import (
 	"github.com/gocraft/dbr"
+	"github.com/lib/pq"
+	"strings"
 )
 
 type PGMigrate struct {
-	dbConn *dbr.Connection
-	tx     *dbr.Tx
-	config Config
-	logger Logger
+	dbConn   *dbr.Connection
+	tx       *dbr.Tx
+	dbTokens map[string]string
+	config   Config
+	logger   Logger
 }
 
 func ctxNew(config Config) *PGMigrate {
@@ -22,6 +25,16 @@ func ctxNew(config Config) *PGMigrate {
 	if config.MigrationsTable == "" {
 		ctx.dbg("ctxNew", "no migrations table provided, using default")
 		config.MigrationsTable = defaultMigrationsTable
+	}
+	ctx.dbTokens = map[string]string{}
+	if tokenStr, err := pq.ParseURL(config.DBUrl); err == nil {
+		for _, tp := range strings.Split(tokenStr, " ") {
+			tokens := strings.Split(tp, "=")
+			if len(tokens) != 2 {
+				continue
+			}
+			ctx.dbTokens[tokens[0]] = tokens[1]
+		}
 	}
 	ctx.config = config
 	return ctx

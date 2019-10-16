@@ -118,3 +118,75 @@ func (ctx *PGMigrate) migrationCreate(name string) error {
 	ctx.logger.Print(fmt.Sprintf("creating %s", up))
 	return ctx.fileWriteContents(up, []byte(""))
 }
+
+type migrationSet struct {
+	items map[uint64]*migration
+}
+
+func newMigrationSet() *migrationSet {
+	return &migrationSet{
+		items: make(map[uint64]*migration),
+	}
+}
+
+func (s *migrationSet) add(items ...*migration) {
+	for _, m := range items {
+		s.items[m.Version] = m
+	}
+}
+
+func (s *migrationSet) rem(items ...*migration) {
+	for _, m := range items {
+		delete(s.items, m.Version)
+	}
+}
+
+func (s *migrationSet) has(item *migration) bool {
+	_, found := s.items[item.Version]
+	return found
+}
+
+func (s *migrationSet) itemsSlice() []*migration {
+	rs := make([]*migration, 0)
+	for _, m := range s.items {
+		rs = append(rs, m)
+	}
+	sort.Sort(byVersion(rs))
+	return rs
+}
+
+func migrationSliceIntersection(a, b []*migration) []*migration {
+	sa := newMigrationSet()
+	sb := newMigrationSet()
+	sa.add(a...)
+	for _, m := range b {
+		if sa.has(m) {
+			sb.add(m)
+		}
+	}
+	items := sb.itemsSlice()
+	sort.Sort(byVersion(items))
+	return items
+}
+
+func migrationSliceUnion(a, b []*migration) []*migration {
+	s := newMigrationSet()
+	s.add(a...)
+	s.add(b...)
+	items := s.itemsSlice()
+	sort.Sort(byVersion(items))
+	return items
+}
+
+func migrationSliceDifference(a, b []*migration) []*migration {
+	s := newMigrationSet()
+	s.add(a...)
+	s.rem(b...)
+	items := s.itemsSlice()
+	sort.Sort(byVersion(items))
+	return items
+}
+
+func migrationSliceSymmetricDifference(a, b []*migration) []*migration {
+	return migrationSliceUnion(migrationSliceDifference(a, b), migrationSliceDifference(b, a))
+}

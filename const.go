@@ -12,3 +12,5 @@ const (
 	errMissingMigrationFileTpl  = "missing migration file with version: %v"
 	defaultMigrationsTable      = "pgmigrate"
 )
+
+type ConfirmCB func(prompt string) bool

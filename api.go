@@ -1,7 +1,6 @@
 package pgmigrate
 
 import (
-	//	"bufio"
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
@@ -28,6 +27,16 @@ func (ctx *PGMigrate) Finish() error {
 	return ctx.finish()
 }
 
+func (ctx *PGMigrate) CreateDB(cb ConfirmCB) error {
+	ctx.dbg("CreateDB")
+	return ctx.dbEnsureDBExists(cb)
+}
+
+func (ctx *PGMigrate) DropDB(cb ConfirmCB) error {
+	ctx.dbg("DropDB")
+	return ctx.dbDropDB(cb)
+}
+
 // MigrateFromFile loads the specified file and does a direct migration without
 // modifying the migrations table. Useful for database schema
 // and database seeds.
@@ -42,7 +51,8 @@ func New(config Config) *PGMigrate {
 }
 
 // MigrateUp applies `up` migrations from migration dir in order.
-// `steps` are number of migrations to perform.
+// `steps` are number of migrations to perform. If steps == -1
+// all `up` migrations will be applied.
 func (ctx *PGMigrate) MigrateUp(steps int) error {
 	ctx.dbg("MigrateUp", steps)
 	migrations, err := ctx.migrationGetAll()
@@ -60,10 +70,13 @@ func (ctx *PGMigrate) MigrateUp(steps int) error {
 	}
 	ss := ctx.migrationSuperSet(migrations, migrated)
 	if len(ss) == 0 {
-		ctx.logger.Print("there was nothing to migrate")
+		ctx.logger.Ok("there was nothing to migrate")
 		return nil
 	}
 	stepsLeft := steps
+	if steps == -1 {
+		stepsLeft = len(ss)
+	}
 	for _, m := range ss {
 		ctx.dbg("stepsLeft", stepsLeft)
 		if stepsLeft < 1 {
@@ -79,7 +92,8 @@ func (ctx *PGMigrate) MigrateUp(steps int) error {
 }
 
 // MigrateDown applies `down` migrations from migration dir in order.
-// `steps` are number of migrations to perform.
+// `steps` are number of migrations to perform. If steps == -1
+// all `down` migrations will be applied.
 func (ctx *PGMigrate) MigrateDown(steps int) error {
 	ctx.dbg("MigrateDown", steps)
 	if err := ctx.dbMigrationsTableExist(); err != nil {
@@ -90,7 +104,14 @@ func (ctx *PGMigrate) MigrateDown(steps int) error {
 		ctx.dbg("MigrateDown", err)
 		return err
 	}
+	if len(migratedVersions) == 0 {
+		ctx.logger.Ok("there was nothing to migrate")
+		return nil
+	}
 	stepsLeft := steps
+	if stepsLeft == -1 {
+		stepsLeft = len(migratedVersions)
+	}
 	for _, m := range migratedVersions {
 		ctx.dbg("stepsLeft", stepsLeft)
 		if stepsLeft < 1 {
@@ -101,6 +122,63 @@ func (ctx *PGMigrate) MigrateDown(steps int) error {
 			return err
 		}
 		stepsLeft--
+	}
+	return nil
+}
+
+// sync method
+// in one transaction
+// fetch migrations in db
+// fetch migrations in fs
+// find migrations that exist in db but not in fs
+// if found:
+//    show info to user
+//    confirm that migrations will be rolled back
+//    roll back db migrations from end
+// apply all newer migrations from fs in order
+func (ctx *PGMigrate) Sync() error {
+	return nil
+	ctx.dbg("Sync")
+	if err := ctx.dbMigrationsTableExist(); err != nil {
+		ctx.dbg("Sync", err)
+		return err
+	}
+	migrations, err := ctx.migrationGetAll()
+	if err != nil {
+		return err
+	}
+	migrated, err := ctx.dbGetMigrated()
+	if err != nil {
+		ctx.dbg("Sync", err)
+		return err
+	}
+	// check if any migration has changed on disk
+	migrationsMap := map[uint64]*migration{}
+	migratedMap := map[uint64]*migration{}
+	for _, m := range migrations {
+		migrationsMap[m.Version] = m
+	}
+	for _, m := range migrated {
+		migratedMap[m.Version] = m
+	}
+	changedMigrations := []*migration{}
+	for _, fm := range migrations {
+		dm, found := migratedMap[fm.Version]
+		if !found {
+			continue
+		}
+		if dm.Up != fm.Up || dm.Down != fm.Down {
+			// found a migration that has been changed on disk
+			changedMigrations = append(changedMigrations, fm)
+		}
+	}
+	if len(changedMigrations) > 0 {
+		//
+	}
+	migratedOnlyInDb := migrationSliceDifference(migrated, migrations)
+	if len(migratedOnlyInDb) > 0 {
+		// we have migrations that don't exist in file system
+
 	}
 	return nil
 }
@@ -122,6 +200,7 @@ func (ctx *PGMigrate) DumpDBSchema() ([]byte, error) {
 // DumpDBSchemaToFileWithName calls `DumpDBSchema` and writes output to
 // specified file.
 func (ctx *PGMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName string) error {
+	ctx.dbg("DumpDBSchemaToFileWithName")
 	schema, err := ctx.DumpDBSchema()
 	if err != nil {
 		return err
@@ -150,20 +229,30 @@ func (ctx *PGMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName stri
 	return nil
 }
 
-// DumpDBSchemaToFile dumps database schema and performed database migrations to files named `schema_<timestamp-unix>.sql` and `migrations_<timestamp-uni>.sql`.
-func (ctx *PGMigrate) DumpDBSchemaToFile() error {
+func getFileNameOrDefault(prefix, suffix string, fname *string, t *int64) string {
+	if fname != nil {
+		return fmt.Sprintf("%s_%s.%s", prefix, *fname, suffix)
+	}
+	if t != nil {
+		return fmt.Sprintf("%s_%d.%s", prefix, *t, suffix)
+	}
 	now := time.Now().Unix()
-	schemaName := fmt.Sprintf("schema_%d.sql", now)
-	migrationsName := fmt.Sprintf("migrations_%d.sql", now)
+	return fmt.Sprintf("%s_%d.%s", prefix, now, suffix)
+}
+
+// DumpDBSchemaToFile dumps database schema and performed database migrations to files named `schema_<timestamp-unix>.sql` and `migrations_<timestamp-uni>.sql`.
+func (ctx *PGMigrate) DumpDBSchemaToFile(fname *string) error {
+	now := time.Now().Unix()
+	schemaName := getFileNameOrDefault("schema", "sql", fname, &now)
+	migrationsName := getFileNameOrDefault("migrations", "sql", fname, &now)
 	return ctx.DumpDBSchemaToFileWithName(schemaName, migrationsName)
 }
 
 // DumpDBFull dumps database schema and content to a file named `dump_<timestamp-unix>.sql`
-func (ctx *PGMigrate) DumpDBFull() error {
+func (ctx *PGMigrate) DumpDBFull(fname *string) error {
 	ctx.dbg("dumpDBData")
-	now := time.Now().Unix()
 	cmd := exec.Command("pg_dump", ctx.config.DBUrl, "-O", "--column-inserts")
-	fp := filepath.Join(ctx.config.BaseDirectory, fmt.Sprintf("dump_%d.sql", now))
+	fp := filepath.Join(ctx.config.BaseDirectory, getFileNameOrDefault("dump", "sql", fname, nil))
 	file, err := os.OpenFile(fp, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		ctx.dbg("dumpDBData", err)

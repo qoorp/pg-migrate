@@ -7,4 +7,5 @@ type Config struct {
 	Logger          Logger
 	MigrationsTable string
 	Debug           bool
+	DryRun          bool
 }

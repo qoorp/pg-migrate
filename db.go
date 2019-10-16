@@ -15,6 +15,11 @@ const dbTableSchema = `create table if not exists %s (
 
 type execCB func(tx *dbr.Tx) error
 
+func (ctx *PGMigrate) dbConnectWithURL(url string) (*dbr.Connection, error) {
+	ctx.dbg("dbConnectWithURL")
+	return dbr.Open("postgres", url, nil)
+}
+
 func (ctx *PGMigrate) dbConnect() (*dbr.Connection, error) {
 	ctx.dbg("dbConnect")
 	if ctx.dbConn != nil {
@@ -22,7 +27,7 @@ func (ctx *PGMigrate) dbConnect() (*dbr.Connection, error) {
 		return ctx.dbConn, nil
 	}
 	var err error
-	ctx.dbConn, err = dbr.Open("postgres", ctx.config.DBUrl, nil)
+	ctx.dbConn, err = ctx.dbConnectWithURL(ctx.config.DBUrl)
 	return ctx.dbConn, err
 }
 
@@ -50,6 +55,82 @@ func (ctx *PGMigrate) dbGetTx() (*dbr.Tx, error) {
 	}
 	ctx.tx = _tx
 	return ctx.tx, nil
+}
+
+func (ctx *PGMigrate) dbTokensToURL() string {
+	urlFormat := "postgres://%s:%s@%s:%s"
+	gtd := func(tokenName, def string) string {
+		token, found := ctx.dbTokens[tokenName]
+		if !found {
+			return def
+		}
+		return token
+	}
+	return fmt.Sprintf(urlFormat, gtd("user", ""), gtd("password", ""), gtd("host", "localhost"), gtd("port", "5432"))
+}
+
+func (ctx *PGMigrate) dbEnsureDBExists(cb ConfirmCB) error {
+	url := ctx.dbTokensToURL()
+	ctx.dbgJoin("InitDB", "initing db at:", url)
+	dbConn, err := ctx.dbConnectWithURL(url)
+	if err != nil {
+		ctx.dbg("dbEnsureDBExists", err)
+		return err
+	}
+	defer dbConn.Close()
+	session := dbConn.NewSession(nil)
+	datname, found := ctx.dbTokens["dbname"]
+	if !found {
+		ctx.dbg("dbEnsureDBExists", "empty database name")
+		return fmt.Errorf("empty database name")
+	}
+	dbExists := false
+	if err := session.SelectBySql("select exists(select 1 from pg_database where datname = ?)", datname).LoadOne(&dbExists); err != nil {
+		ctx.dbg("dbEnsureDBExists", err)
+		return err
+	}
+	if dbExists {
+		ctx.logger.Warn("database '%s' already exists", datname)
+		return nil
+	}
+	if cb != nil && !cb(fmt.Sprintf("create db: '%s'?", datname)) {
+		ctx.dbg("dbEnsureDBExists", "callback and false return")
+		ctx.logger.Warn("aborting...")
+		return nil
+	}
+	if _, err := session.Exec(fmt.Sprintf("create database %s;", datname)); err != nil {
+		ctx.dbg("dbEnsureDBExists", err)
+		return err
+	}
+	ctx.logger.Ok(fmt.Sprintf("database '%s' created", datname))
+	return nil
+}
+
+func (ctx *PGMigrate) dbDropDB(cb ConfirmCB) error {
+	url := ctx.dbTokensToURL()
+	dbConn, err := ctx.dbConnectWithURL(url)
+	if err != nil {
+		ctx.dbg("dbDropDB", err)
+		return err
+	}
+	defer dbConn.Close()
+	session := dbConn.NewSession(nil)
+	datname, found := ctx.dbTokens["dbname"]
+	if !found {
+		ctx.dbg("dbDropDB", "empty database name")
+		return fmt.Errorf("empty database name")
+	}
+	if cb != nil && !cb(fmt.Sprintf("drop database: '%s'?", datname)) {
+		ctx.dbg("dbDropDB", "callback and false return")
+		ctx.logger.Warn("aborting...")
+		return nil
+	}
+	if _, err := session.Exec(fmt.Sprintf("drop database %s", datname)); err != nil {
+		ctx.dbg("dbDropDB", err)
+		return err
+	}
+	ctx.logger.Ok(fmt.Sprintf("database '%s' dropped", datname))
+	return nil
 }
 
 func (ctx *PGMigrate) dbExecString(contents string, cb execCB) error {
@@ -138,7 +219,10 @@ func (ctx *PGMigrate) dbFinish() error {
 	if ctx.tx == nil && ctx.dbConn == nil {
 		return nil
 	}
-	if ctx.tx != nil {
+	if ctx.config.DryRun {
+		ctx.dbg("dbFinish", "dry run, not committing changes")
+	}
+	if ctx.tx != nil && !ctx.config.DryRun {
 		ctx.dbg("dbFinish", "committing transaction")
 		if err := ctx.tx.Commit(); err != nil {
 			ctx.dbg("dbFinish", err)
