@@ -258,6 +258,9 @@ func (ctx *PGMigrate) DumpDBSchemaToFile(fname *string) error {
 func (ctx *PGMigrate) DumpDBFull(fname *string) error {
 	ctx.dbg("dumpDBData")
 	cmd := exec.Command("pg_dump", ctx.config.DBUrl, "-O", "--column-inserts")
+	if err := ctx.fileEnsureDirExist(ctx.config.BaseDirectory); err != nil {
+		return err
+	}
 	fp := filepath.Join(ctx.config.BaseDirectory, getFileNameOrDefault("dump", "sql", fname, nil))
 	file, err := os.OpenFile(fp, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -281,7 +284,7 @@ func (ctx *PGMigrate) DumpDBFull(fname *string) error {
 		ctx.dbg("dumpDBData", err)
 		return err
 	}
-	ctx.logger.Printf("database dump written to \"%s\"", fp)
+	ctx.logger.Ok(fmt.Sprintf("database dump written to \"%s\"", fp))
 	return nil
 }
 
@@ -293,7 +296,7 @@ func (ctx *PGMigrate) LoadFullDump(dumpName string) error {
 		return err
 	}
 	kvs := strings.Split(opts, " ")
-	for i, _ := range kvs {
+	for i := range kvs {
 		kvs[i] = "--" + kvs[i]
 	}
 	fp := filepath.Join(ctx.config.BaseDirectory, dumpName)
@@ -304,5 +307,6 @@ func (ctx *PGMigrate) LoadFullDump(dumpName string) error {
 		ctx.dbg("LoadFullDump", err)
 		return err
 	}
+	ctx.logger.Ok(fmt.Sprintf("database restored successfully from '%s'", dumpName))
 	return nil
 }
