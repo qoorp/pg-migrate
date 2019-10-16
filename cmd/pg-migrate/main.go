@@ -13,17 +13,22 @@ import (
 	"strings"
 )
 
+const (
+	version = "v0.0.5"
+)
+
 var arguments = map[string]interface{}{}
 var logger = newCmdLogger()
 var bw = false
 
 const (
-	argURL    = "--url"
-	argDIR    = "--dir"
-	argName   = "--name"
-	argSteps  = "--steps"
-	argBW     = "--bw"
-	argDryRun = "-d"
+	argURL     = "--url"
+	argDIR     = "--dir"
+	argName    = "--name"
+	argSteps   = "--steps"
+	argBW      = "--bw"
+	argDryRun  = "-d"
+	argVersion = "--version"
 
 	confirmY       = "y"
 	confirmPainful = "yes-i-am-really-really-sure"
@@ -64,10 +69,11 @@ Usage:
   pg-migrate load-dump <name> [--dir=<dir>] [--name=<name>] [--bw] [-d]
   pg-migrate seed [--dir=<dir>] [--name=<name>] [--bw] [-d]
   pg-migrate -h | --help
+  pg-migrate --version
 
 Options:
   -h --help        Show help.
-  --version        Show version.
+  --version        Show version. [default: false]
   --dir=<dir>      Directory where migrations files are stores. [default: pgmigrate/]
   --steps=<steps>  Max steps to migrate [default: 1].
   --bw             No colour (black and white). [default false]
@@ -79,10 +85,16 @@ Options:
 	if err != nil {
 		logger.Warn("No .env file loaded")
 	}
+	if v, ok := arguments[argVersion].(bool); ok && v {
+		logger.Ok(fmt.Sprintf("Version: %s", version))
+		return
+	}
 	for _, k := range cmdKeys {
 		if c, ok := arguments[k].(bool); c && ok {
 			if cmd, found := cmds[k]; found {
-				logger.Inf("%s", cmd.d+"...")
+				if len(cmd.d) > 0 {
+					logger.Inf("%s", cmd.d+"...")
+				}
 				if err := cmd.f(); err != nil {
 					logger.Error(err)
 				}
