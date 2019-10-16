@@ -82,7 +82,7 @@ Options:
 	for _, k := range cmdKeys {
 		if c, ok := arguments[k].(bool); c && ok {
 			if cmd, found := cmds[k]; found {
-				logger.Printf("%s", cmd.d+"...")
+				logger.Inf("%s", cmd.d+"...")
 				if err := cmd.f(); err != nil {
 					logger.Error(err)
 				}
@@ -190,8 +190,7 @@ func confirmCB(expected string, simple bool) func(prompt string) bool {
 }
 
 func getConfig() (pgmigrate.Config, error) {
-	//FIXME: remove
-	fmt.Printf("%+v\n", arguments)
+	logger.DBG(fmt.Sprintf("%+v\n", arguments))
 	cfg := pgmigrate.Config{}
 	cfg.DBUrl = os.Getenv("PGM_DATABASE_URL")
 	if u, ok := arguments[argURL].(string); ok {
@@ -218,8 +217,7 @@ func getConfig() (pgmigrate.Config, error) {
 	if dr, ok := arguments[argDryRun].(bool); ok {
 		cfg.DryRun = dr
 	}
-	fmt.Printf("%+v\n", cfg)
-	fmt.Printf("%+v\n", logger)
+	logger.DBG(fmt.Sprintf("%+v", cfg))
 	return cfg, nil
 }
 
