@@ -190,7 +190,7 @@ func confirmCB(expected string, simple bool) func(prompt string) bool {
 }
 
 func getConfig() (pgmigrate.Config, error) {
-	logger.DBG(fmt.Sprintf("%+v\n", arguments))
+	logger.DBG(fmt.Sprintf("%+v", arguments))
 	cfg := pgmigrate.Config{}
 	cfg.DBUrl = os.Getenv("PGM_DATABASE_URL")
 	if u, ok := arguments[argURL].(string); ok {
