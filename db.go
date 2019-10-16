@@ -162,7 +162,7 @@ func (ctx *PGMigrate) dbExecString(contents string, cb execCB) error {
 }
 
 func (ctx *PGMigrate) dbMigrate(mig *migration, md migrateDirection) error {
-	ctx.logger.Printf("migrating > %s (%s)", mig.Name, string(md))
+	ctx.logger.Inf("migrating > %s (%s)", mig.Name, string(md))
 	contents := mig.Up
 	if md == migrateDown {
 		contents = mig.Down
