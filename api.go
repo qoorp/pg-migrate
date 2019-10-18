@@ -248,12 +248,15 @@ func (ctx *PGMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
 	migrations := []*migration{}
 	migrateContents, err := ctx.fileGetContents(migrateName)
 	if err == nil {
-		if err := json.Unmarshal([]byte(migrateContents), &migrations); err != nil {
-			ctx.dbg("LoadDBSchema", err)
-			return err
+		if cb != nil && cb(fmt.Sprintf("found a migrations file '%s'. should these migrations be inserted?", migrateName)) {
+			if err := json.Unmarshal([]byte(migrateContents), &migrations); err != nil {
+				ctx.dbg("LoadDBSchema", err)
+				return err
+			}
+			sort.Sort(byVersion(migrations))
 		}
-		sort.Sort(byVersion(migrations))
 	}
+	ctx.logger.Inf(fmt.Sprintf("loading %s", schemaName))
 	if err := ctx.dbExecString(schemaContents, nil); err != nil {
 		ctx.dbg("LoadDBSchema", err)
 		return err

@@ -93,7 +93,7 @@ Options:
 		if c, ok := arguments[k].(bool); c && ok {
 			if cmd, found := cmds[k]; found {
 				if len(cmd.d) > 0 {
-					logger.Inf("%s", cmd.d+"...")
+					logger.Inf(cmd.d + "...")
 				}
 				if err := cmd.f(); err != nil {
 					logger.Error(err)
@@ -309,12 +309,14 @@ func dumpFullCMD() error {
 }
 
 func loadSchemaCMD() error {
-	ctx := pgmigrate.New(getConfigOrDie())
+	cfg := getConfigOrDie()
+	cfg.AllInOneTx = false
+	ctx := pgmigrate.New(cfg)
 	fileName := "schema.sql"
 	if fn := getArgStringOrNil(argName); fn != nil {
 		fileName = *fn
 	}
-	if err := ctx.MigrateFromFile(fileName); err != nil {
+	if err := ctx.LoadDBSchema(fileName, confirmCB(confirmY, true)); err != nil {
 		return err
 	}
 	return ctx.Finish()

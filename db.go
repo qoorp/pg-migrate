@@ -69,6 +69,15 @@ func (ctx *PGMigrate) dbTokensToURL() string {
 	return fmt.Sprintf(urlFormat, gtd("user", ""), gtd("password", ""), gtd("host", "localhost"), gtd("port", "5432"))
 }
 
+func (ctx *PGMigrate) dbExists(session *dbr.Session, datname string) (bool, error) {
+	dbExists := false
+	if err := session.SelectBySql("select exists(select 1 from pg_database where datname = ?)", datname).LoadOne(&dbExists); err != nil {
+		ctx.dbg("dbExists", err)
+		return false, err
+	}
+	return dbExists, nil
+}
+
 func (ctx *PGMigrate) dbEnsureDBExists(cb ConfirmCB) error {
 	url := ctx.dbTokensToURL()
 	ctx.dbgJoin("InitDB", "initing db at:", url)
@@ -84,20 +93,20 @@ func (ctx *PGMigrate) dbEnsureDBExists(cb ConfirmCB) error {
 		ctx.dbg("dbEnsureDBExists", "empty database name")
 		return fmt.Errorf("empty database name")
 	}
-	dbExists := false
-	if err := session.SelectBySql("select exists(select 1 from pg_database where datname = ?)", datname).LoadOne(&dbExists); err != nil {
-		ctx.dbg("dbEnsureDBExists", err)
+	if dbExists, err := ctx.dbExists(session, datname); err == nil {
+		if dbExists {
+			ctx.logger.Inf("database '%s' already exists", datname)
+			return nil
+		}
+	} else {
 		return err
-	}
-	if dbExists {
-		ctx.logger.Warn("database '%s' already exists", datname)
-		return nil
 	}
 	if cb != nil && !cb(fmt.Sprintf("create db: '%s'?", datname)) {
 		ctx.dbg("dbEnsureDBExists", "callback and false return")
 		ctx.logger.Warn("aborting...")
 		return nil
 	}
+	ctx.logger.Inf(fmt.Sprintf("creating database %s", datname))
 	if _, err := session.Exec(fmt.Sprintf("create database %s;", datname)); err != nil {
 		ctx.dbg("dbEnsureDBExists", err)
 		return err
@@ -120,11 +129,18 @@ func (ctx *PGMigrate) dbDropDB(cb ConfirmCB) error {
 		ctx.dbg("dbDropDB", "empty database name")
 		return fmt.Errorf("empty database name")
 	}
+	if dbExists, err := ctx.dbExists(session, datname); err == nil {
+		if !dbExists {
+			ctx.logger.Warn(fmt.Sprintf("database %s does not exist", datname))
+			return nil
+		}
+	}
 	if cb != nil && !cb(fmt.Sprintf("drop database: '%s'?", datname)) {
 		ctx.dbg("dbDropDB", "callback and false return")
 		ctx.logger.Warn("aborting...")
 		return nil
 	}
+	ctx.logger.Inf(fmt.Sprintf("dropping database %s", datname))
 	if _, err := session.Exec(fmt.Sprintf("drop database %s", datname)); err != nil {
 		ctx.dbg("dbDropDB", err)
 		return err
@@ -177,6 +193,7 @@ func (ctx *PGMigrate) dbMigrate(mig *migration, md migrateDirection) error {
 
 func (ctx *PGMigrate) dbInsertMigration(mig *migration) error {
 	ctx.dbgJoin("dbInsertMigration", "inserting:", mig.Name)
+	ctx.logger.Inf(fmt.Sprintf("inserting %s", mig.Name))
 	_, err := ctx.tx.InsertInto(ctx.config.MigrationsTable).
 		Columns("version", "name", "up", "down").
 		Values(mig.Version, mig.Name, mig.Up, mig.Down).
@@ -200,6 +217,7 @@ func (ctx *PGMigrate) dbInsertMigrationBatch(migs []*migration) error {
 
 func (ctx *PGMigrate) dbDeleteMigration(mig *migration) error {
 	ctx.dbgJoin("dbDeleteMigration", "deleting:", mig.Name)
+	ctx.logger.Inf(fmt.Sprintf("deleting %s", mig.Name))
 	_, err := ctx.tx.DeleteFrom(ctx.config.MigrationsTable).
 		Where(dbr.Eq("version", mig.Version)).
 		Exec()
@@ -208,6 +226,7 @@ func (ctx *PGMigrate) dbDeleteMigration(mig *migration) error {
 
 func (ctx *PGMigrate) dbMigrationsTableExist() error {
 	ctx.dbg("dbMigrationsTableExist")
+	ctx.logger.Inf("checking for migrations table")
 	return ctx.dbExecString(fmt.Sprintf(dbTableSchema, ctx.config.MigrationsTable), nil)
 }
 
