@@ -184,6 +184,20 @@ func (ctx *PGMigrate) dbInsertMigration(mig *migration) error {
 	return err
 }
 
+func (ctx *PGMigrate) dbInsertMigrationBatch(migs []*migration) error {
+	if ctx.tx == nil {
+		if _, err := ctx.dbGetTx(); err != nil {
+			return err
+		}
+	}
+	for _, mig := range migs {
+		if err := ctx.dbInsertMigration(mig); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (ctx *PGMigrate) dbDeleteMigration(mig *migration) error {
 	ctx.dbgJoin("dbDeleteMigration", "deleting:", mig.Name)
 	_, err := ctx.tx.DeleteFrom(ctx.config.MigrationsTable).
