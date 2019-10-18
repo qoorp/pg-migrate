@@ -1,6 +1,8 @@
 package pgmigrate
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"regexp"
@@ -24,6 +26,42 @@ type byVersion []*migration
 func (a byVersion) Len() int           { return len(a) }
 func (a byVersion) Less(i, j int) bool { return a[i].Version < a[j].Version }
 func (a byVersion) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+
+func (m *migration) UnmarshalJSON(b []byte) error {
+	type alias migration
+	mm := &alias{}
+	if err := json.Unmarshal(b, mm); err != nil {
+		return err
+	}
+	if b, err := base64.StdEncoding.DecodeString(mm.Up); err == nil {
+		mm.Up = string(b)
+	} else {
+		return err
+	}
+	if b, err := base64.StdEncoding.DecodeString(mm.Down); err == nil {
+		mm.Down = string(b)
+	} else {
+		return err
+	}
+	m.Version = mm.Version
+	m.Name = mm.Name
+	m.Up = mm.Up
+	m.Down = mm.Down
+	return nil
+}
+
+func (m *migration) MarshalJSON() ([]byte, error) {
+	type alias migration
+	return json.Marshal(&struct {
+		Up   string `json:"up"`
+		Down string `json:"down"`
+		*alias
+	}{
+		Up:    base64.StdEncoding.EncodeToString([]byte(m.Up)),
+		Down:  base64.StdEncoding.EncodeToString([]byte(m.Down)),
+		alias: (*alias)(m),
+	})
+}
 
 func (ctx *PGMigrate) migrationGetVersion(fileName string) (uint64, error) {
 	ctx.dbg("migrationGetVersion", fileName)
