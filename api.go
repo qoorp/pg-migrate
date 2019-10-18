@@ -2,7 +2,6 @@ package pgmigrate
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/lib/pq"
@@ -10,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -215,10 +216,6 @@ func (ctx *PGMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName stri
 	if err != nil {
 		return err
 	}
-	for _, m := range migrations {
-		m.Up = base64.StdEncoding.EncodeToString([]byte(m.Up))
-		m.Down = base64.StdEncoding.EncodeToString([]byte(m.Down))
-	}
 	jBytes, err := json.Marshal(migrations)
 	if err != nil {
 		ctx.dbg("DumpDBSchemaToFileWithName", err)
@@ -232,6 +229,40 @@ func (ctx *PGMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName stri
 		ctx.dbg("DumpDBSchemaToFileWithName", err)
 		return err
 	}
+	return nil
+}
+
+// LoadDBSchema loads specified schema and inserts migrations from matching
+// migrations file if found next to the schema sql.
+func (ctx *PGMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
+	ctx.dbg("LoadDBSchema")
+	schemaContents, err := ctx.fileGetContents(schemaName)
+	if err != nil {
+		ctx.dbg("LoadDBSchema", err)
+		return err
+	}
+	// find matching migrations file
+	re := regexp.MustCompilePOSIX("^(schema)")
+	migrateName := re.ReplaceAllString(schemaName, "migrations")
+	ctx.dbg("LoadDBSchema", migrateName)
+	migrations := []*migration{}
+	migrateContents, err := ctx.fileGetContents(migrateName)
+	if err == nil {
+		if err := json.Unmarshal([]byte(migrateContents), &migrations); err != nil {
+			ctx.dbg("LoadDBSchema", err)
+			return err
+		}
+		sort.Sort(byVersion(migrations))
+	}
+	if err := ctx.dbExecString(schemaContents, nil); err != nil {
+		ctx.dbg("LoadDBSchema", err)
+		return err
+	}
+	if err := ctx.dbInsertMigrationBatch(migrations); err != nil {
+		ctx.dbg("LoadDBSchema", err)
+		return err
+	}
+	ctx.dbg("LoadDBSchema", "done")
 	return nil
 }
 
