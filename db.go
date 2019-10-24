@@ -1,7 +1,8 @@
-package pgmigrate
+package pqmigrate
 
 import (
 	"fmt"
+
 	"github.com/gocraft/dbr"
 	_ "github.com/lib/pq"
 )

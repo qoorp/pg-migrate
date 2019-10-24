@@ -1,11 +1,13 @@
-package pgmigrate
+package pqmigrate
 
 import (
+	"strings"
+
 	"github.com/gocraft/dbr"
 	"github.com/lib/pq"
-	"strings"
 )
 
+// PGMigrate utility for managing common postgresql operations
 type PGMigrate struct {
 	dbConn   *dbr.Connection
 	tx       *dbr.Tx

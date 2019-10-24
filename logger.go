@@ -1,10 +1,11 @@
-package pgmigrate
+package pqmigrate
 
 import (
 	"fmt"
 	"strings"
 )
 
+// Logger interface for using other loggers than stdout.
 type Logger interface {
 	Printf(format string, args ...interface{})
 	Warn(args ...interface{})

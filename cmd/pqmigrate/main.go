@@ -3,14 +3,15 @@ package main
 import (
 	"bufio"
 	"fmt"
-	pgmigrate "github.com/Preciselyco/pg-migrate"
-	"github.com/docopt/docopt-go"
-	"github.com/fatih/color"
-	"github.com/joho/godotenv"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/Preciselyco/pqmigrate"
+	"github.com/docopt/docopt-go"
+	"github.com/fatih/color"
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -54,27 +55,27 @@ var cmds = map[string]struct {
 }
 
 func main() {
-	usage := `pg-migrate
+	usage := `pqmigrate
 
 Usage:
-  pg-migrate create-db [--url=<url>] [--bw]
-  pg-migrate drop-db [--url=<url>] [--bw]
-  pg-migrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
-  pg-migrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
-  pg-migrate sync [--url=<url>] [--dir=<dir>] [--bw] [-d]
-  pg-migrate create <name> [--dir=<dir>] [--bw] [-d]
-  pg-migrate dump-schema [--dir=<dir>] [--name=<name>] [--bw]
-  pg-migrate dump-full [--dir=<dir>] [--name=<name>] [--bw]
-  pg-migrate load-schema [--dir=<dir>] [--name=<name>] [--bw] [-d]
-  pg-migrate load-dump <name> [--dir=<dir>] [--name=<name>] [--bw] [-d]
-  pg-migrate seed [--dir=<dir>] [--name=<name>] [--bw] [-d]
-  pg-migrate -h | --help
-  pg-migrate --version
+  pqmigrate create-db [--url=<url>] [--bw]
+  pqmigrate drop-db [--url=<url>] [--bw]
+  pqmigrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
+  pqmigrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
+  pqmigrate sync [--url=<url>] [--dir=<dir>] [--bw] [-d]
+  pqmigrate create <name> [--dir=<dir>] [--bw] [-d]
+  pqmigrate dump-schema [--dir=<dir>] [--name=<name>] [--bw]
+  pqmigrate dump-full [--dir=<dir>] [--name=<name>] [--bw]
+  pqmigrate load-schema [--dir=<dir>] [--name=<name>] [--bw] [-d]
+  pqmigrate load-dump <name> [--dir=<dir>] [--name=<name>] [--bw] [-d]
+  pqmigrate seed [--dir=<dir>] [--name=<name>] [--bw] [-d]
+  pqmigrate -h | --help
+  pqmigrate --version
 
 Options:
   -h --help        Show help.
   --version        Show version. [default: false]
-  --dir=<dir>      Directory where migrations files are stores. [default: pgmigrate/]
+  --dir=<dir>      Directory where migrations files are stores. [default: migrations/]
   --steps=<steps>  Max steps to migrate [default: 1].
   --bw             No colour (black and white). [default false]
   -d               Dry run. [default: false]
@@ -201,9 +202,9 @@ func confirmCB(expected string, simple bool) func(prompt string) bool {
 	}
 }
 
-func getConfig() (pgmigrate.Config, error) {
+func getConfig() (pqmigrate.Config, error) {
 	logger.DBG(fmt.Sprintf("%+v", arguments))
-	cfg := pgmigrate.Config{}
+	cfg := pqmigrate.Config{}
 	cfg.DBUrl = os.Getenv("PGM_DATABASE_URL")
 	if u, ok := arguments[argURL].(string); ok {
 		cfg.DBUrl = u
@@ -233,7 +234,7 @@ func getConfig() (pgmigrate.Config, error) {
 	return cfg, nil
 }
 
-func getConfigOrDie() pgmigrate.Config {
+func getConfigOrDie() pqmigrate.Config {
 	cfg, err := getConfig()
 	if err != nil {
 		logger.Error("could not get a valid config")
@@ -255,17 +256,17 @@ func getArgStringOrNil(key string) *string {
 }
 
 func createDbCMD() error {
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	return ctx.CreateDB(confirmCB(confirmY, true))
 }
 
 func dropDbCMD() error {
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	return ctx.DropDB(confirmCB(confirmPainful, false))
 }
 
 func createCMD() error {
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	name := getArgStringOrNil("<name>")
 	if name == nil {
 		return fmt.Errorf("<name> required")
@@ -275,7 +276,7 @@ func createCMD() error {
 
 func upCMD() error {
 	steps := getSteps()
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	if err := ctx.MigrateUp(steps); err != nil {
 		return err
 	}
@@ -284,7 +285,7 @@ func upCMD() error {
 
 func downCMD() error {
 	steps := getSteps()
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	if err := ctx.MigrateDown(steps); err != nil {
 		return err
 	}
@@ -292,26 +293,26 @@ func downCMD() error {
 }
 
 func syncCMD() error {
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	return ctx.Sync()
 }
 
 func dumpSchemaCMD() error {
 	fileName := getArgStringOrNil(argName)
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	return ctx.DumpDBSchemaToFile(fileName)
 }
 
 func dumpFullCMD() error {
 	fileName := getArgStringOrNil(argName)
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	return ctx.DumpDBFull(fileName)
 }
 
 func loadSchemaCMD() error {
 	cfg := getConfigOrDie()
 	cfg.AllInOneTx = false
-	ctx := pgmigrate.New(cfg)
+	ctx := pqmigrate.New(cfg)
 	fileName := "schema.sql"
 	if fn := getArgStringOrNil(argName); fn != nil {
 		fileName = *fn
@@ -323,7 +324,7 @@ func loadSchemaCMD() error {
 }
 
 func loadDumpCMD() error {
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	dumpName := getArgStringOrNil("<name>")
 	if dumpName == nil {
 		return fmt.Errorf("<name> required")
@@ -335,7 +336,7 @@ func loadDumpCMD() error {
 }
 
 func seedCMD() error {
-	ctx := pgmigrate.New(getConfigOrDie())
+	ctx := pqmigrate.New(getConfigOrDie())
 	fileName := "seeds.sql"
 	if fn := getArgStringOrNil(argName); fn != nil {
 		fileName = *fn

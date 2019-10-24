@@ -1,12 +1,13 @@
-package pgmigrate
+package pqmigrate
 
 import (
 	"fmt"
-	"golang.org/x/text/unicode/norm"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func (ctx *PGMigrate) fileEnsureDirExist(path string) error {

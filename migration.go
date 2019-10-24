@@ -1,4 +1,4 @@
-package pgmigrate
+package pqmigrate
 
 import (
 	"encoding/base64"

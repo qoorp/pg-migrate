@@ -1,10 +1,9 @@
-package pgmigrate
+package pqmigrate
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/lib/pq"
 	"io"
 	"os"
 	"os/exec"
@@ -13,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // CreateMigration creates a new migration file with specified name
@@ -94,6 +95,9 @@ func (ctx *PGMigrate) MigrateUp(steps int) error {
 			return err
 		}
 		stepsLeft--
+	}
+	for i := range []int64{1, 3, 4, 5} {
+		fmt.Printf("%d\n", i)
 	}
 	return nil
 }
@@ -280,7 +284,7 @@ func getFileNameOrDefault(prefix, suffix string, fname *string, t *int64) string
 	return fmt.Sprintf("%s_%d.%s", prefix, now, suffix)
 }
 
-// DumpDBSchemaToFile dumps database schema and performed database migrations to files named `schema_<timestamp-unix>.sql` and `migrations_<timestamp-uni>.sql`.
+// DumpDBSchemaToFile dumps database schema and performed database migrations to files named `schema_<timestamp-unix>.sql` and `migrations_<timestamp-unix>.sql`.
 func (ctx *PGMigrate) DumpDBSchemaToFile(fname *string) error {
 	now := time.Now().Unix()
 	schemaName := getFileNameOrDefault("schema", "sql", fname, &now)
