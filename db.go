@@ -3,7 +3,7 @@ package pqmigrate
 import (
 	"fmt"
 
-	"github.com/gocraft/dbr"
+	"github.com/Preciselyco/pqdbr"
 	_ "github.com/lib/pq"
 )
 
@@ -14,14 +14,14 @@ const dbTableSchema = `create table if not exists %s (
 			down text not null default ''
 		)`
 
-type execCB func(tx *dbr.Tx) error
+type execCB func(tx *pqdbr.Tx) error
 
-func (ctx *PGMigrate) dbConnectWithURL(url string) (*dbr.Connection, error) {
+func (ctx *PQMigrate) dbConnectWithURL(url string) (*pqdbr.Connection, error) {
 	ctx.dbg("dbConnectWithURL")
-	return dbr.Open("postgres", url, nil)
+	return pqdbr.Open("postgres", url, nil)
 }
 
-func (ctx *PGMigrate) dbConnect() (*dbr.Connection, error) {
+func (ctx *PQMigrate) dbConnect() (*pqdbr.Connection, error) {
 	ctx.dbg("dbConnect")
 	if ctx.dbConn != nil {
 		ctx.dbg("dbConnect", "Database connection already established")
@@ -32,12 +32,12 @@ func (ctx *PGMigrate) dbConnect() (*dbr.Connection, error) {
 	return ctx.dbConn, err
 }
 
-func (ctx *PGMigrate) dbGetConn() (*dbr.Connection, error) {
+func (ctx *PQMigrate) dbGetConn() (*pqdbr.Connection, error) {
 	ctx.dbg("dbGetConn")
 	return ctx.dbConnect()
 }
 
-func (ctx *PGMigrate) dbGetTx() (*dbr.Tx, error) {
+func (ctx *PQMigrate) dbGetTx() (*pqdbr.Tx, error) {
 	ctx.dbg("dbGetTx")
 	if ctx.tx != nil {
 		ctx.dbg("dbGetTx", "transaction already active")
@@ -58,7 +58,7 @@ func (ctx *PGMigrate) dbGetTx() (*dbr.Tx, error) {
 	return ctx.tx, nil
 }
 
-func (ctx *PGMigrate) dbTokensToURL() string {
+func (ctx *PQMigrate) dbTokensToURL() string {
 	urlFormat := "postgres://%s:%s@%s:%s"
 	gtd := func(tokenName, def string) string {
 		token, found := ctx.dbTokens[tokenName]
@@ -70,7 +70,7 @@ func (ctx *PGMigrate) dbTokensToURL() string {
 	return fmt.Sprintf(urlFormat, gtd("user", ""), gtd("password", ""), gtd("host", "localhost"), gtd("port", "5432"))
 }
 
-func (ctx *PGMigrate) dbExists(session *dbr.Session, datname string) (bool, error) {
+func (ctx *PQMigrate) dbExists(session *pqdbr.Session, datname string) (bool, error) {
 	dbExists := false
 	if err := session.SelectBySql("select exists(select 1 from pg_database where datname = ?)", datname).LoadOne(&dbExists); err != nil {
 		ctx.dbg("dbExists", err)
@@ -79,7 +79,7 @@ func (ctx *PGMigrate) dbExists(session *dbr.Session, datname string) (bool, erro
 	return dbExists, nil
 }
 
-func (ctx *PGMigrate) dbEnsureDBExists(cb ConfirmCB) error {
+func (ctx *PQMigrate) dbEnsureDBExists(cb ConfirmCB) error {
 	url := ctx.dbTokensToURL()
 	ctx.dbgJoin("InitDB", "initing db at:", url)
 	dbConn, err := ctx.dbConnectWithURL(url)
@@ -116,7 +116,7 @@ func (ctx *PGMigrate) dbEnsureDBExists(cb ConfirmCB) error {
 	return nil
 }
 
-func (ctx *PGMigrate) dbDropDB(cb ConfirmCB) error {
+func (ctx *PQMigrate) dbDropDB(cb ConfirmCB) error {
 	url := ctx.dbTokensToURL()
 	dbConn, err := ctx.dbConnectWithURL(url)
 	if err != nil {
@@ -150,7 +150,7 @@ func (ctx *PGMigrate) dbDropDB(cb ConfirmCB) error {
 	return nil
 }
 
-func (ctx *PGMigrate) dbExecString(contents string, cb execCB) error {
+func (ctx *PQMigrate) dbExecString(contents string, cb execCB) error {
 	ctx.dbg("dbExecString")
 	tx, err := ctx.dbGetTx()
 	if err != nil {
@@ -178,13 +178,13 @@ func (ctx *PGMigrate) dbExecString(contents string, cb execCB) error {
 	return nil
 }
 
-func (ctx *PGMigrate) dbMigrate(mig *migration, md migrateDirection) error {
+func (ctx *PQMigrate) dbMigrate(mig *migration, md migrateDirection) error {
 	ctx.logger.Inf("migrating > %s (%s)", mig.Name, string(md))
 	contents := mig.Up
 	if md == migrateDown {
 		contents = mig.Down
 	}
-	return ctx.dbExecString(contents, func(tx *dbr.Tx) error {
+	return ctx.dbExecString(contents, func(tx *pqdbr.Tx) error {
 		if md == migrateUP {
 			return ctx.dbInsertMigration(mig)
 		}
@@ -192,7 +192,7 @@ func (ctx *PGMigrate) dbMigrate(mig *migration, md migrateDirection) error {
 	})
 }
 
-func (ctx *PGMigrate) dbInsertMigration(mig *migration) error {
+func (ctx *PQMigrate) dbInsertMigration(mig *migration) error {
 	ctx.dbgJoin("dbInsertMigration", "inserting:", mig.Name)
 	ctx.logger.Inf(fmt.Sprintf("inserting %s", mig.Name))
 	_, err := ctx.tx.InsertInto(ctx.config.MigrationsTable).
@@ -202,7 +202,7 @@ func (ctx *PGMigrate) dbInsertMigration(mig *migration) error {
 	return err
 }
 
-func (ctx *PGMigrate) dbInsertMigrationBatch(migs []*migration) error {
+func (ctx *PQMigrate) dbInsertMigrationBatch(migs []*migration) error {
 	if ctx.tx == nil {
 		if _, err := ctx.dbGetTx(); err != nil {
 			return err
@@ -216,22 +216,22 @@ func (ctx *PGMigrate) dbInsertMigrationBatch(migs []*migration) error {
 	return nil
 }
 
-func (ctx *PGMigrate) dbDeleteMigration(mig *migration) error {
+func (ctx *PQMigrate) dbDeleteMigration(mig *migration) error {
 	ctx.dbgJoin("dbDeleteMigration", "deleting:", mig.Name)
 	ctx.logger.Inf(fmt.Sprintf("deleting %s", mig.Name))
 	_, err := ctx.tx.DeleteFrom(ctx.config.MigrationsTable).
-		Where(dbr.Eq("version", mig.Version)).
+		Where(pqdbr.Eq("version", mig.Version)).
 		Exec()
 	return err
 }
 
-func (ctx *PGMigrate) dbMigrationsTableExist() error {
+func (ctx *PQMigrate) dbMigrationsTableExist() error {
 	ctx.dbg("dbMigrationsTableExist")
 	ctx.logger.Inf("checking for migrations table")
 	return ctx.dbExecString(fmt.Sprintf(dbTableSchema, ctx.config.MigrationsTable), nil)
 }
 
-func (ctx *PGMigrate) dbGetMigrated() ([]*migration, error) {
+func (ctx *PQMigrate) dbGetMigrated() ([]*migration, error) {
 	ctx.dbg("dbGetMigrated")
 	tx, err := ctx.dbGetTx()
 	if err != nil {
@@ -248,7 +248,7 @@ func (ctx *PGMigrate) dbGetMigrated() ([]*migration, error) {
 	return migrations, nil
 }
 
-func (ctx *PGMigrate) dbFinish() error {
+func (ctx *PQMigrate) dbFinish() error {
 	ctx.dbg("dbFinish")
 	if ctx.tx == nil && ctx.dbConn == nil {
 		return nil

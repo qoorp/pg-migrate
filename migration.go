@@ -63,13 +63,13 @@ func (m *migration) MarshalJSON() ([]byte, error) {
 	})
 }
 
-func (ctx *PGMigrate) migrationGetVersion(fileName string) (uint64, error) {
+func (ctx *PQMigrate) migrationGetVersion(fileName string) (uint64, error) {
 	ctx.dbg("migrationGetVersion", fileName)
 	fs := strings.Split(fileName, "_")
 	return strconv.ParseUint(fs[0], 10, 64)
 }
 
-func (ctx *PGMigrate) migrationGetAll() ([]*migration, error) {
+func (ctx *PQMigrate) migrationGetAll() ([]*migration, error) {
 	ctx.dbg("migrationGetAll")
 	files, err := ioutil.ReadDir(ctx.config.BaseDirectory)
 	if err != nil {
@@ -124,7 +124,7 @@ func (ctx *PGMigrate) migrationGetAll() ([]*migration, error) {
 	return migrations, nil
 }
 
-func (ctx *PGMigrate) migrationSuperSet(vs1, vs2 []*migration) (r1 []*migration) {
+func (ctx *PQMigrate) migrationSuperSet(vs1, vs2 []*migration) (r1 []*migration) {
 	ctx.dbg("migrationSuperSet")
 	for _, i := range vs1 {
 		found := false
@@ -141,7 +141,7 @@ func (ctx *PGMigrate) migrationSuperSet(vs1, vs2 []*migration) (r1 []*migration)
 	return
 }
 
-func (ctx *PGMigrate) migrationCreate(name string) error {
+func (ctx *PQMigrate) migrationCreate(name string) error {
 	ctx.dbg("migrationCreate", name)
 	if ok := reMigrationName.MatchString(name); !ok {
 		return fmt.Errorf("invalid migration name, must match the regexp: ^[a-z0-9_]+$")

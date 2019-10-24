@@ -52,7 +52,7 @@ func (l *defaultLogger) Ok(args ...interface{}) {
 	l.Print(args...)
 }
 
-func (ctx *PGMigrate) dbg(lbl string, args ...interface{}) {
+func (ctx *PQMigrate) dbg(lbl string, args ...interface{}) {
 	if ctx.config.Debug {
 		if len(args) == 0 {
 			ctx.logger.DBG(fmt.Sprintf("[%s]", lbl))
@@ -65,7 +65,7 @@ func (ctx *PGMigrate) dbg(lbl string, args ...interface{}) {
 	}
 }
 
-func (ctx *PGMigrate) dbgJoin(lbl string, args ...string) {
+func (ctx *PQMigrate) dbgJoin(lbl string, args ...string) {
 	if ctx.config.Debug {
 		if len(args) == 0 {
 			ctx.logger.DBG(lbl)

@@ -10,7 +10,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-func (ctx *PGMigrate) fileEnsureDirExist(path string) error {
+func (ctx *PQMigrate) fileEnsureDirExist(path string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		ctx.dbg("fileEnsureDirExists", fmt.Sprintf("directory '%s' does not exist, creating", path))
 		if err := os.MkdirAll(path, 0755); err != nil {
@@ -21,7 +21,7 @@ func (ctx *PGMigrate) fileEnsureDirExist(path string) error {
 	return nil
 }
 
-func (ctx *PGMigrate) fileGetContents(fileName string) (string, error) {
+func (ctx *PQMigrate) fileGetContents(fileName string) (string, error) {
 	fp := filepath.Join(ctx.config.BaseDirectory, fileName)
 	ctx.dbgJoin("fileGetContents", "getting:", fp)
 	cb, err := ioutil.ReadFile(fp)
@@ -32,7 +32,7 @@ func (ctx *PGMigrate) fileGetContents(fileName string) (string, error) {
 	return norm.NFC.String(strings.TrimSpace(string(cb))), nil
 }
 
-func (ctx *PGMigrate) fileWriteContents(fileName string, contents []byte) error {
+func (ctx *PQMigrate) fileWriteContents(fileName string, contents []byte) error {
 	fp := filepath.Join(ctx.config.BaseDirectory, fileName)
 	ctx.dbg("fileWriteContents", fp)
 	if err := ctx.fileEnsureDirExist(ctx.config.BaseDirectory); err != nil {
@@ -41,7 +41,7 @@ func (ctx *PGMigrate) fileWriteContents(fileName string, contents []byte) error 
 	return ioutil.WriteFile(fp, contents, 0644)
 }
 
-func (ctx *PGMigrate) fileExec(fileName string) error {
+func (ctx *PQMigrate) fileExec(fileName string) error {
 	ctx.dbg("fileExec", fileName)
 	contents, err := ctx.fileGetContents(fileName)
 	if err != nil {

@@ -17,14 +17,14 @@ import (
 )
 
 // CreateMigration creates a new migration file with specified name
-func (ctx *PGMigrate) CreateMigration(name string) error {
+func (ctx *PQMigrate) CreateMigration(name string) error {
 	ctx.dbg("CreateMigration", name)
 	return ctx.migrationCreate(name)
 }
 
 // Finish commits lingering database transaction (if all in one transaction specified)
 // and closes database handle.
-func (ctx *PGMigrate) Finish() error {
+func (ctx *PQMigrate) Finish() error {
 	ctx.dbg("Finish")
 	return ctx.finish()
 }
@@ -32,7 +32,7 @@ func (ctx *PGMigrate) Finish() error {
 // CreateDB ensures that the database specified in the postgres url
 // exists. If not it creates it. This probably won't work if you don't have
 // full access to the postgres server.
-func (ctx *PGMigrate) CreateDB(cb ConfirmCB) error {
+func (ctx *PQMigrate) CreateDB(cb ConfirmCB) error {
 	ctx.dbg("CreateDB")
 	return ctx.dbEnsureDBExists(cb)
 }
@@ -40,7 +40,7 @@ func (ctx *PGMigrate) CreateDB(cb ConfirmCB) error {
 // DropDB drops the database specified in the postgres url.
 // This probably won't work if you don't have full access to
 // the postgres server.
-func (ctx *PGMigrate) DropDB(cb ConfirmCB) error {
+func (ctx *PQMigrate) DropDB(cb ConfirmCB) error {
 	ctx.dbg("DropDB")
 	return ctx.dbDropDB(cb)
 }
@@ -48,20 +48,20 @@ func (ctx *PGMigrate) DropDB(cb ConfirmCB) error {
 // MigrateFromFile loads the specified file and does a direct migration without
 // modifying the migrations table. Useful for database schema
 // and database seeds.
-func (ctx *PGMigrate) MigrateFromFile(fileName string) error {
+func (ctx *PQMigrate) MigrateFromFile(fileName string) error {
 	ctx.dbg("MigrateFromFile", fileName)
 	return ctx.fileExec(fileName)
 }
 
-// New creates a new PGMigrate instance.
-func New(config Config) *PGMigrate {
+// New creates a new PQMigrate instance.
+func New(config Config) *PQMigrate {
 	return ctxNew(config)
 }
 
 // MigrateUp applies `up` migrations from migration dir in order.
 // `steps` are number of migrations to perform. If steps == -1
 // all `up` migrations will be applied.
-func (ctx *PGMigrate) MigrateUp(steps int) error {
+func (ctx *PQMigrate) MigrateUp(steps int) error {
 	ctx.dbg("MigrateUp", steps)
 	migrations, err := ctx.migrationGetAll()
 	if err != nil {
@@ -105,7 +105,7 @@ func (ctx *PGMigrate) MigrateUp(steps int) error {
 // MigrateDown applies `down` migrations from migration dir in order.
 // `steps` are number of migrations to perform. If steps == -1
 // all `down` migrations will be applied.
-func (ctx *PGMigrate) MigrateDown(steps int) error {
+func (ctx *PQMigrate) MigrateDown(steps int) error {
 	ctx.dbg("MigrateDown", steps)
 	if err := ctx.dbMigrationsTableExist(); err != nil {
 		return err
@@ -147,7 +147,7 @@ func (ctx *PGMigrate) MigrateDown(steps int) error {
 //    confirm that migrations will be rolled back
 //    roll back db migrations from end
 // apply all newer migrations from fs in order
-func (ctx *PGMigrate) Sync() error {
+func (ctx *PQMigrate) Sync() error {
 	return nil
 	ctx.dbg("Sync")
 	if err := ctx.dbMigrationsTableExist(); err != nil {
@@ -195,7 +195,7 @@ func (ctx *PGMigrate) Sync() error {
 }
 
 // DumpDBSchema dumps the database schema without owner information.
-func (ctx *PGMigrate) DumpDBSchema() ([]byte, error) {
+func (ctx *PQMigrate) DumpDBSchema() ([]byte, error) {
 	ctx.dbg("DumpDBSchema")
 	cmd := exec.Command("pg_dump", ctx.config.DBUrl, "-s", "-O")
 	var out bytes.Buffer
@@ -210,7 +210,7 @@ func (ctx *PGMigrate) DumpDBSchema() ([]byte, error) {
 
 // DumpDBSchemaToFileWithName calls `DumpDBSchema` and writes output to
 // specified file.
-func (ctx *PGMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName string) error {
+func (ctx *PQMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName string) error {
 	ctx.dbg("DumpDBSchemaToFileWithName")
 	schema, err := ctx.DumpDBSchema()
 	if err != nil {
@@ -238,7 +238,7 @@ func (ctx *PGMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName stri
 
 // LoadDBSchema loads specified schema and inserts migrations from matching
 // migrations file if found next to the schema sql.
-func (ctx *PGMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
+func (ctx *PQMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
 	ctx.dbg("LoadDBSchema")
 	schemaContents, err := ctx.fileGetContents(schemaName)
 	if err != nil {
@@ -285,7 +285,7 @@ func getFileNameOrDefault(prefix, suffix string, fname *string, t *int64) string
 }
 
 // DumpDBSchemaToFile dumps database schema and performed database migrations to files named `schema_<timestamp-unix>.sql` and `migrations_<timestamp-unix>.sql`.
-func (ctx *PGMigrate) DumpDBSchemaToFile(fname *string) error {
+func (ctx *PQMigrate) DumpDBSchemaToFile(fname *string) error {
 	now := time.Now().Unix()
 	schemaName := getFileNameOrDefault("schema", "sql", fname, &now)
 	migrationsName := getFileNameOrDefault("migrations", "sql", fname, &now)
@@ -293,7 +293,7 @@ func (ctx *PGMigrate) DumpDBSchemaToFile(fname *string) error {
 }
 
 // DumpDBFull dumps database schema and content to a file named `dump_<timestamp-unix>.sql`
-func (ctx *PGMigrate) DumpDBFull(fname *string) error {
+func (ctx *PQMigrate) DumpDBFull(fname *string) error {
 	ctx.dbg("dumpDBData")
 	cmd := exec.Command("pg_dump", ctx.config.DBUrl, "-O", "--column-inserts")
 	if err := ctx.fileEnsureDirExist(ctx.config.BaseDirectory); err != nil {
@@ -326,7 +326,7 @@ func (ctx *PGMigrate) DumpDBFull(fname *string) error {
 	return nil
 }
 
-func (ctx *PGMigrate) LoadFullDump(dumpName string) error {
+func (ctx *PQMigrate) LoadFullDump(dumpName string) error {
 	ctx.dbg("LoadFullDump")
 	opts, err := pq.ParseURL(ctx.config.DBUrl)
 	if err != nil {
