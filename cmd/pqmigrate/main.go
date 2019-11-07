@@ -205,14 +205,14 @@ func confirmCB(expected string, simple bool) func(prompt string) bool {
 func getConfig() (pqmigrate.Config, error) {
 	logger.DBG(fmt.Sprintf("%+v", arguments))
 	cfg := pqmigrate.Config{}
-	cfg.DBUrl = os.Getenv("PGM_DATABASE_URL")
+	cfg.DBUrl = os.Getenv("PQM_DATABASE_URL")
 	if u, ok := arguments[argURL].(string); ok {
 		cfg.DBUrl = u
 	}
 	if cfg.DBUrl == "" {
 		return cfg, fmt.Errorf("no database url provided")
 	}
-	cfg.BaseDirectory = os.Getenv("PGM_BASE_DIRECTORY")
+	cfg.BaseDirectory = os.Getenv("PQM_BASE_DIRECTORY")
 	if d, ok := arguments[argDIR].(string); ok {
 		var fullDir string
 		var err error
@@ -222,10 +222,10 @@ func getConfig() (pqmigrate.Config, error) {
 		}
 		cfg.BaseDirectory = fullDir
 	}
-	cfg.Debug = getEnvOrDefaultBool("PGM_DEBUG", false)
-	cfg.AllInOneTx = getEnvOrDefaultBool("PGM_ALL_IN_ONE_TX", false)
+	cfg.Debug = getEnvOrDefaultBool("PQM_DEBUG", false)
+	cfg.AllInOneTx = getEnvOrDefaultBool("PQM_ALL_IN_ONE_TX", false)
 	cfg.Logger = logger
-	cfg.MigrationsTable = os.Getenv("PGM_MIGRATIONS_TABLE")
+	cfg.MigrationsTable = os.Getenv("PQM_MIGRATIONS_TABLE")
 	cfg.DryRun = false
 	if dr, ok := arguments[argDryRun].(bool); ok {
 		cfg.DryRun = dr
@@ -294,7 +294,10 @@ func downCMD() error {
 
 func syncCMD() error {
 	ctx := pqmigrate.New(getConfigOrDie())
-	return ctx.Sync()
+	if err := ctx.Sync(confirmCB(confirmY, true)); err != nil {
+		return err
+	}
+	return ctx.Finish()
 }
 
 func dumpSchemaCMD() error {

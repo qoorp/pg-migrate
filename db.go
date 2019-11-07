@@ -179,13 +179,13 @@ func (ctx *PQMigrate) dbExecString(contents string, cb execCB) error {
 }
 
 func (ctx *PQMigrate) dbMigrate(mig *migration, md migrateDirection) error {
-	ctx.logger.Inf("migrating > %s (%s)", mig.Name, string(md))
+	ctx.logger.Inf(fmt.Sprintf("migrating > %s (%s)", mig.Name, string(md)))
 	contents := mig.Up
 	if md == migrateDown {
 		contents = mig.Down
 	}
 	return ctx.dbExecString(contents, func(tx *pqdbr.Tx) error {
-		if md == migrateUP {
+		if md == migrateUp {
 			return ctx.dbInsertMigration(mig)
 		}
 		return ctx.dbDeleteMigration(mig)

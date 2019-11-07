@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andreyvit/diff"
 	"github.com/lib/pq"
 )
 
@@ -90,7 +91,7 @@ func (ctx *PQMigrate) MigrateUp(steps int) error {
 		if stepsLeft < 1 {
 			break
 		}
-		if err := ctx.dbMigrate(m, migrateUP); err != nil {
+		if err := ctx.dbMigrate(m, migrateUp); err != nil {
 			ctx.dbg("MigrateUp", err)
 			return err
 		}
@@ -147,9 +148,10 @@ func (ctx *PQMigrate) MigrateDown(steps int) error {
 //    confirm that migrations will be rolled back
 //    roll back db migrations from end
 // apply all newer migrations from fs in order
-func (ctx *PQMigrate) Sync() error {
-	return nil
-	ctx.dbg("Sync")
+func (ctx *PQMigrate) Sync(cb ConfirmCB) error {
+	if cb == nil {
+		return fmt.Errorf("Sync is only usable interactively")
+	}
 	if err := ctx.dbMigrationsTableExist(); err != nil {
 		ctx.dbg("Sync", err)
 		return err
@@ -184,11 +186,53 @@ func (ctx *PQMigrate) Sync() error {
 		}
 	}
 	if len(changedMigrations) > 0 {
-		//
+		// we have migrations that have changed on disk
+		ctx.logger.Warn(fmt.Sprintf("%d migration(s) changed on disk!", len(changedMigrations)))
+		for _, migration := range changedMigrations {
+			ctx.logger.Warn(migration.Name)
+			dbMigration := migratedMap[migration.Version]
+			if lines := diff.LineDiffAsLines(dbMigration.Up, migration.Up); len(lines) > 0 {
+				ctx.logger.Warn("================\nUP:\n================")
+				for _, line := range lines {
+					if line[0] == '-' {
+						ctx.logger.Warn(line)
+					} else if line[0] == '+' {
+						ctx.logger.Inf(line)
+					} else {
+						ctx.logger.Ok(line)
+					}
+				}
+			}
+			if lines := diff.LineDiffAsLines(dbMigration.Down, migration.Down); len(lines) > 0 {
+				ctx.logger.Warn("================\nDOWN:\n================")
+				for _, line := range lines {
+					if line[0] == '-' {
+						ctx.logger.Warn(line)
+					} else if line[0] == '+' {
+						ctx.logger.Inf(line)
+					} else {
+						ctx.logger.Ok(line)
+					}
+				}
+			}
+			if !cb("Shall i migrate down and then up?") {
+				ctx.logger.Warn("skipping migration...")
+				continue
+			}
+			if err := ctx.dbMigrate(dbMigration, migrateDown); err != nil {
+				ctx.logger.Error(err)
+				return err
+			}
+			if err := ctx.dbMigrate(migration, migrateUp); err != nil {
+				ctx.logger.Error(err)
+				return err
+			}
+		}
 	}
 	migratedOnlyInDb := migrationSliceDifference(migrated, migrations)
 	if len(migratedOnlyInDb) > 0 {
 		// we have migrations that don't exist in file system
+		ctx.logger.Warn(fmt.Sprintf("%d migrations don't exist on disk", len(migratedOnlyInDb)))
 
 	}
 	return nil

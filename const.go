@@ -3,7 +3,7 @@ package pqmigrate
 type migrateDirection string
 
 const (
-	migrateUP   migrateDirection = "up"
+	migrateUp   migrateDirection = "up"
 	migrateDown migrateDirection = "down"
 )
 
