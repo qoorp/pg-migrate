@@ -98,12 +98,15 @@ Options:
 				}
 				if err := cmd.f(); err != nil {
 					logger.Error(err)
+					return
 				}
 			} else {
 				logger.Error(fmt.Sprintf("command: '%s' not implemented", k))
+				return
 			}
 		} else if !c && !ok {
 			logger.Error(fmt.Sprintf("command: '%s' not implemented", k))
+			return
 		}
 	}
 	logger.Ok("Success!")
@@ -150,7 +153,9 @@ func (l *cmdLogger) Ok(args ...interface{}) {
 }
 
 func (l *cmdLogger) DBG(args ...interface{}) {
-	l.printFEach(color.Magenta, "DBG: %v\n", args...)
+	if os.Getenv("PQM_DEBUG") == "true" {
+		l.printFEach(color.Magenta, "DBG: %v\n", args...)
+	}
 }
 
 func getSteps() int {
