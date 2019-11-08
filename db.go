@@ -194,7 +194,6 @@ func (ctx *PQMigrate) dbMigrate(mig *migration, md migrateDirection) error {
 
 func (ctx *PQMigrate) dbInsertMigration(mig *migration) error {
 	ctx.dbgJoin("dbInsertMigration", "inserting:", mig.Name)
-	ctx.logger.Inf(fmt.Sprintf("inserting %s", mig.Name))
 	_, err := ctx.tx.InsertInto(ctx.config.MigrationsTable).
 		Columns("version", "name", "up", "down").
 		Values(mig.Version, mig.Name, mig.Up, mig.Down).
@@ -218,7 +217,6 @@ func (ctx *PQMigrate) dbInsertMigrationBatch(migs []*migration) error {
 
 func (ctx *PQMigrate) dbDeleteMigration(mig *migration) error {
 	ctx.dbgJoin("dbDeleteMigration", "deleting:", mig.Name)
-	ctx.logger.Inf(fmt.Sprintf("deleting %s", mig.Name))
 	_, err := ctx.tx.DeleteFrom(ctx.config.MigrationsTable).
 		Where(pqdbr.Eq("version", mig.Version)).
 		Exec()
@@ -227,7 +225,6 @@ func (ctx *PQMigrate) dbDeleteMigration(mig *migration) error {
 
 func (ctx *PQMigrate) dbMigrationsTableExist() error {
 	ctx.dbg("dbMigrationsTableExist")
-	ctx.logger.Inf("checking for migrations table")
 	return ctx.dbExecString(fmt.Sprintf(dbTableSchema, ctx.config.MigrationsTable), nil)
 }
 
