@@ -10,7 +10,7 @@ const (
 const (
 	errMissingMigrationFilesTpl = "there are missing migration files: %v"
 	errMissingMigrationFileTpl  = "missing migration file with version: %v"
-	defaultMigrationsTable      = "pgmigrate"
+	defaultMigrationsTable      = "pqmigrate"
 )
 
 // ConfirmCB simple confirm function for potentially dangerous operations.
