@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version = "v0.0.7"
+	version = "v0.1.0-beta"
 )
 
 var arguments = map[string]interface{}{}
@@ -23,19 +23,18 @@ var logger = newCmdLogger()
 var bw = false
 
 const (
-	argURL     = "--url"
-	argDIR     = "--dir"
-	argName    = "--name"
-	argSteps   = "--steps"
-	argBW      = "--bw"
-	argDryRun  = "-d"
-	argVersion = "--version"
+	argURL        = "--url"
+	argDIR        = "--dir"
+	argName       = "--name"
+	argSteps      = "--steps"
+	argBW         = "--bw"
+	argDryRun     = "-d"
+	argHelpConfig = "--help-config"
+	argVersion    = "--version"
 
 	confirmY       = "y"
 	confirmPainful = "yes-i-am-really-really-sure"
 )
-
-var cmdKeys = []string{"create-db", "drop-db", "up", "down", "sync", "create", "dump-schema", "dump-full", "load-schema", "load-dump", "seed"}
 
 var cmds = map[string]struct {
 	f func() error
@@ -70,46 +69,54 @@ Usage:
   pqmigrate load-dump <name> [--dir=<dir>] [--name=<name>] [--bw] [-d]
   pqmigrate seed [--dir=<dir>] [--name=<name>] [--bw] [-d]
   pqmigrate -h | --help
+  pqmigrate --help-config
   pqmigrate --version
 
 Options:
   -h --help        Show help.
+  --help-config	   Show configuration options. [default: false]
   --version        Show version. [default: false]
   --dir=<dir>      Directory where migrations files are stores. [default: migrations/]
   --steps=<steps>  Max steps to migrate [default: 1].
   --bw             No colour (black and white). [default false]
-  -d               Dry run. [default: false]
+  -d               Dry run, test migrations but rollback changes. [default: false]
+`
+	configOptions := `
+Configuration
+
+pqmigrate supports loading environment variables from a file named ".env" in the directory
+where the command is run. 
+
+Supported environment keys:
+ PQM_ALL_IN_ONE_TX: Bool. If specified all db operations will be performed in a single transaction.
+ PQM_BASE_DIRECTORY: Relative path to directory containing migrations. Defaults to "migrations".
+ PQM_DATABASE_URL: String on format "psql://<username>:<password>@<host>[:<port>]/<database>"
+ PQM_DEBUG: Bool. Defaults to false.
+ PQM_MIGRATIONS_TABLE: String. Name of migrations table in the database. Defaults to "pqmigrate".
 `
 	arguments, _ = docopt.ParseDoc(usage)
 	bw = arguments[argBW].(bool)
-	err := godotenv.Load()
-	if err != nil {
-		logger.Warn("No .env file loaded")
+	if arguments[argHelpConfig].(bool) {
+		fmt.Println(configOptions)
+		return
 	}
+	godotenv.Load()
 	if v, ok := arguments[argVersion].(bool); ok && v {
 		logger.Ok(fmt.Sprintf("Version: %s", version))
 		return
 	}
-	for _, k := range cmdKeys {
+	for k, cmd := range cmds {
 		if c, ok := arguments[k].(bool); c && ok {
-			if cmd, found := cmds[k]; found {
-				if len(cmd.d) > 0 {
-					logger.Inf(cmd.d + "...")
-				}
-				if err := cmd.f(); err != nil {
-					logger.Error(err)
-					return
-				}
-			} else {
-				logger.Error(fmt.Sprintf("command: '%s' not implemented", k))
+			if len(cmd.d) > 0 {
+				logger.Inf(cmd.d + "...")
+			}
+			if err := cmd.f(); err != nil {
+				logger.Error(err)
 				return
 			}
-		} else if !c && !ok {
-			logger.Error(fmt.Sprintf("command: '%s' not implemented", k))
-			return
 		}
 	}
-	logger.Ok("Success!")
+	logger.Ok("done.")
 }
 
 type cmdLogger struct{}
@@ -242,7 +249,6 @@ func getConfig() (pqmigrate.Config, error) {
 func getConfigOrDie() pqmigrate.Config {
 	cfg, err := getConfig()
 	if err != nil {
-		logger.Error("could not get a valid config")
 		logger.Error(err)
 		os.Exit(-1)
 	}
