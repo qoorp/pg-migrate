@@ -79,7 +79,7 @@ func (ctx *PQMigrate) MigrateUp(steps int) error {
 	}
 	ss := ctx.migrationSuperSet(migrations, migrated)
 	if len(ss) == 0 {
-		ctx.logger.Ok("there was nothing to migrate")
+		ctx.logger.Inf("there was nothing to migrate")
 		return nil
 	}
 	stepsLeft := steps
@@ -117,7 +117,7 @@ func (ctx *PQMigrate) MigrateDown(steps int) error {
 		return err
 	}
 	if len(migratedVersions) == 0 {
-		ctx.logger.Ok("there was nothing to migrate")
+		ctx.logger.Inf("there was nothing to migrate")
 		return nil
 	}
 	stepsLeft := steps
@@ -138,16 +138,11 @@ func (ctx *PQMigrate) MigrateDown(steps int) error {
 	return nil
 }
 
-// sync method
-// in one transaction
-// fetch migrations in db
-// fetch migrations in fs
-// find migrations that exist in db but not in fs
-// if found:
-//    show info to user
-//    confirm that migrations will be rolled back
-//    roll back db migrations from end
-// apply all newer migrations from fs in order
+// Sync tries to synchronize db and fs state by first
+// checking if any migrations have changed on fs, then
+// finding migrations that exist in db but not in fs.
+// The last step is to apply all migrations that only
+// only exist in fs.
 func (ctx *PQMigrate) Sync(cb ConfirmCB) error {
 	if cb == nil {
 		return fmt.Errorf("Sync is only usable interactively")
@@ -233,7 +228,32 @@ func (ctx *PQMigrate) Sync(cb ConfirmCB) error {
 	if len(migratedOnlyInDb) > 0 {
 		// we have migrations that don't exist in file system
 		ctx.logger.Warn(fmt.Sprintf("%d migrations don't exist on disk", len(migratedOnlyInDb)))
-
+		sort.Sort(byVersionReversed(migratedOnlyInDb))
+		for _, migration := range migratedOnlyInDb {
+			ctx.logger.Warn("================\nUP:\n================")
+			ctx.logger.Ok(migration.Up)
+			ctx.logger.Warn("================\nDOWN:\n================")
+			ctx.logger.Ok(migration.Down)
+			if !cb("Shall i migrate down?") {
+				ctx.logger.Warn("skipping migration...")
+				continue
+			}
+			if err := ctx.dbMigrate(migration, migrateDown); err != nil {
+				return err
+			}
+		}
+	}
+	newMigrations := migrationSliceDifference(migrations, migrated)
+	if len(newMigrations) > 0 {
+		ctx.logger.Inf(fmt.Sprintf("applying %d new migration(s)", len(newMigrations)))
+		sort.Sort(byVersion(newMigrations))
+		for _, migration := range newMigrations {
+			if err := ctx.dbMigrate(migration, migrateUp); err != nil {
+				return err
+			}
+		}
+	} else {
+		ctx.logger.Inf("nothing to migrate")
 	}
 	return nil
 }
@@ -295,6 +315,7 @@ func (ctx *PQMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
 	ctx.dbg("LoadDBSchema", migrateName)
 	migrations := []*migration{}
 	migrateContents, err := ctx.fileGetContents(migrateName)
+	insertMigrations := false
 	if err == nil {
 		if cb != nil && cb(fmt.Sprintf("found a migrations file '%s'. should these migrations be inserted?", migrateName)) {
 			if err := json.Unmarshal([]byte(migrateContents), &migrations); err != nil {
@@ -302,6 +323,7 @@ func (ctx *PQMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
 				return err
 			}
 			sort.Sort(byVersion(migrations))
+			insertMigrations = true
 		}
 	}
 	ctx.logger.Inf(fmt.Sprintf("loading %s", schemaName))
@@ -309,9 +331,12 @@ func (ctx *PQMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
 		ctx.dbg("LoadDBSchema", err)
 		return err
 	}
-	if err := ctx.dbInsertMigrationBatch(migrations); err != nil {
-		ctx.dbg("LoadDBSchema", err)
-		return err
+	if insertMigrations {
+		ctx.logger.Inf(fmt.Sprintf("inserting %d migration(s)", len(migrations)))
+		if err := ctx.dbInsertMigrationBatch(migrations); err != nil {
+			ctx.dbg("LoadDBSchema", err)
+			return err
+		}
 	}
 	ctx.dbg("LoadDBSchema", "done")
 	return nil
