@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version = "v0.1.0-beta"
+	version = "v1.0.0"
 )
 
 var arguments = map[string]interface{}{}
