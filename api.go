@@ -281,17 +281,19 @@ func (ctx *PQMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName stri
 		return err
 	}
 	migrations, err := ctx.dbGetMigrated()
-	if err != nil {
+	if err != nil && !strings.Contains(err.Error(), "pq: relation") {
 		return err
 	}
-	jBytes, err := json.Marshal(migrations)
-	if err != nil {
-		ctx.dbg("DumpDBSchemaToFileWithName", err)
-		return err
-	}
-	if err := ctx.fileWriteContents(migrationsName, jBytes); err != nil {
-		ctx.dbg("DumpDBSchemaToFileWithName", err)
-		return err
+	if len(migrations) > 0 {
+		jBytes, err := json.Marshal(migrations)
+		if err != nil {
+			ctx.dbg("DumpDBSchemaToFileWithName", err)
+			return err
+		}
+		if err := ctx.fileWriteContents(migrationsName, jBytes); err != nil {
+			ctx.dbg("DumpDBSchemaToFileWithName", err)
+			return err
+		}
 	}
 	if err := ctx.fileWriteContents(schemaName, schema); err != nil {
 		ctx.dbg("DumpDBSchemaToFileWithName", err)
