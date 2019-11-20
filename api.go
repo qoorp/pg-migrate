@@ -97,9 +97,6 @@ func (ctx *PQMigrate) MigrateUp(steps int) error {
 		}
 		stepsLeft--
 	}
-	for i := range []int64{1, 3, 4, 5} {
-		fmt.Printf("%d\n", i)
-	}
 	return nil
 }
 
