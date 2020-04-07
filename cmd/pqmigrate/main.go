@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version = "v1.0.2"
+	version = "v1.0.3"
 )
 
 var arguments = map[string]interface{}{}
@@ -112,7 +112,7 @@ Supported environment keys:
 			}
 			if err := cmd.f(); err != nil {
 				logger.Error(err)
-				return
+				os.Exit(1)
 			}
 		}
 	}
