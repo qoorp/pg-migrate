@@ -1,0 +1,11 @@
+#!/bin/sh
+
+files=$(git diff --cached --name-only -- '*.go')
+if [ "$files" != "" ] ; then
+    for f in $files ; do
+        if [[ "$f" =~ [.](go) ]] ; then
+            goimports -w $f
+            git add $f
+        fi
+    done
+fi
