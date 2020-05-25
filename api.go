@@ -100,6 +100,24 @@ func (ctx *PQMigrate) MigrateUp(steps int) error {
 	return nil
 }
 
+// MigrateUpFile applies specified `up` migration and inserts
+// both `up` and `down` into the migrations table.
+func (ctx *PQMigrate) MigrateUpFile(fileName string) error {
+	ctx.dbg("MigrateUpFile", fileName)
+	if err := ctx.dbMigrationsTableExist(); err != nil {
+		return err
+	}
+	migration, err := ctx.migrationGetSpecific(fileName)
+	if err != nil {
+		return err
+	}
+	if err := ctx.dbMigrate(migration, migrateUp); err != nil {
+		ctx.dbg("MigrateUpFile", err)
+		return err
+	}
+	return nil
+}
+
 // MigrateDown applies `down` migrations from migration dir in order.
 // `steps` are number of migrations to perform. If steps == -1
 // all `down` migrations will be applied.
@@ -131,6 +149,24 @@ func (ctx *PQMigrate) MigrateDown(steps int) error {
 			return err
 		}
 		stepsLeft--
+	}
+	return nil
+}
+
+// MigrateDownFile applies specified `down` migration and deletes
+// both `up` and `down` from migrations table.
+func (ctx *PQMigrate) MigrateDownFile(fileName string) error {
+	ctx.dbg("MigrateDownFile", fileName)
+	if err := ctx.dbMigrationsTableExist(); err != nil {
+		return err
+	}
+	migration, err := ctx.migrationGetSpecific(fileName)
+	if err != nil {
+		return err
+	}
+	if err := ctx.dbMigrate(migration, migrateDown); err != nil {
+		ctx.dbg("MigrateDownFile", err)
+		return err
 	}
 	return nil
 }

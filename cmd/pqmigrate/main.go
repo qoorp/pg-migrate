@@ -45,7 +45,7 @@ var cmds = map[string]struct {
 	"up":          {f: upCMD, d: "migrating up"},
 	"down":        {f: downCMD, d: "migrating down"},
 	"sync":        {f: syncCMD, d: "syncing database and filesystem"},
-	"replace": {f: replaceCMD, d: "replacing migration"},
+	"replace":     {f: replaceCMD, d: "replacing migration"},
 	"create":      {f: createCMD, d: "creating migration files"},
 	"dump-schema": {f: dumpSchemaCMD, d: "dumping database schema"},
 	"dump-full":   {f: dumpFullCMD, d: "dumping database and content"},
@@ -60,8 +60,8 @@ func main() {
 Usage:
   pqmigrate create-db [--url=<url>] [--bw]
   pqmigrate drop-db [--url=<url>] [--bw]
-  pqmigrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
-  pqmigrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
+  pqmigrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d] [--name=<name>]
+  pqmigrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d] [--name=<name>]
   pqmigrate sync [--url=<url>] [--dir=<dir>] [--bw] [-d]
   pqmigrate replace [--url=<url>] [--dir=<dir>] [--bw] [-d] --name=<name>
   pqmigrate create <name> [--dir=<dir>] [--bw] [-d]
@@ -291,6 +291,13 @@ func createCMD() error {
 func upCMD() error {
 	steps := getSteps()
 	ctx := pqmigrate.New(getConfigOrDie())
+	fileName := getArgStringOrNil(argName)
+	if fileName != nil {
+		if err := ctx.MigrateUpFile(*fileName); err != nil {
+			return err
+		}
+		return ctx.Finish()
+	}
 	if err := ctx.MigrateUp(steps); err != nil {
 		return err
 	}
@@ -300,6 +307,13 @@ func upCMD() error {
 func downCMD() error {
 	steps := getSteps()
 	ctx := pqmigrate.New(getConfigOrDie())
+	fileName := getArgStringOrNil(argName)
+	if fileName != nil {
+		if err := ctx.MigrateDownFile(*fileName); err != nil {
+			return err
+		}
+		return ctx.Finish()
+	}
 	if err := ctx.MigrateDown(steps); err != nil {
 		return err
 	}
