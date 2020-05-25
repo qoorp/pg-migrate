@@ -17,7 +17,11 @@ type migration struct {
 	Down    string `db:"down"`
 }
 
-var reMigrationName = regexp.MustCompilePOSIX("^[a-z0-9][a-z0-9_]+$")
+var (
+	reMigrationName   = regexp.MustCompilePOSIX(`^[a-z0-9][a-z0-9_]+$`)
+	migrationFileRegx = regexp.MustCompilePOSIX(`^[0-9]{10}[^.]+\.(up|down).sql$`)
+	migrationRegx     = regexp.MustCompilePOSIX(`^([0-9]{10}[^.]+)`)
+)
 
 type byVersion []*migration
 
@@ -37,6 +41,52 @@ func (ctx *PQMigrate) migrationGetVersion(fileName string) (uint64, error) {
 	return strconv.ParseUint(fs[0], 10, 64)
 }
 
+var errNotMigrationFile = fmt.Errorf("not a migration file")
+
+func (ctx *PQMigrate) migrationGetSpecific(fileName string) (*migration, error) {
+	ctx.dbg("migrationGetSpecific", fileName)
+	sm := migrationFileRegx.FindStringSubmatch(fileName)
+	if len(sm) != 2 {
+		return nil, errNotMigrationFile
+	}
+	ctx.dbg("migrationGetSpecific", sm)
+	direction := sm[1]
+	version, err := ctx.migrationGetVersion(fileName)
+	if err != nil {
+		ctx.dbg("migrationGetSpecific", err)
+		return nil, err
+	}
+	var upContents string
+	var downContents string
+	var upFileName string
+	var downFileName string
+	migrationName := migrationRegx.FindString(fileName)
+	if migrationName == "" {
+		return nil, errNotMigrationFile
+	}
+	if direction == "up" {
+		upFileName = fileName
+		downFileName = migrationName + ".down.sql"
+	} else {
+		downFileName = fileName
+		upFileName = migrationName + ".up.sql"
+	}
+	upContents, err = ctx.fileGetContents(upFileName)
+	if err != nil {
+		return nil, err
+	}
+	downContents, err = ctx.fileGetContents(downFileName)
+	if err != nil {
+		return nil, err
+	}
+	return &migration{
+		Name:    migrationName,
+		Version: version,
+		Up:      upContents,
+		Down:    downContents,
+	}, nil
+}
+
 func (ctx *PQMigrate) migrationGetAll() ([]*migration, error) {
 	ctx.dbg("migrationGetAll")
 	files, err := ioutil.ReadDir(ctx.config.BaseDirectory)
@@ -44,46 +94,31 @@ func (ctx *PQMigrate) migrationGetAll() ([]*migration, error) {
 		ctx.dbg("migrationGetAll", err)
 		return nil, err
 	}
-	reg := regexp.MustCompilePOSIX("^[0-9]{10}.*(up|down).sql$")
 	migMap := map[uint64]*migration{}
 	for _, fo := range files {
 		if fo.IsDir() {
 			continue
 		}
-		sm := reg.FindStringSubmatch(fo.Name())
+		sm := migrationFileRegx.FindStringSubmatch(fo.Name())
 		if len(sm) != 2 {
 			continue
 		}
 		ctx.dbg("migrationGetAll", sm)
-		direction := sm[1]
 		version, err := ctx.migrationGetVersion(fo.Name())
 		if err != nil {
 			ctx.dbg("migrationGetAll", err)
 			return nil, err
 		}
-		contents, err := ctx.fileGetContents(fo.Name())
-		migNameParts := strings.Split(fo.Name(), ".")
-		migrationName := strings.Join(migNameParts[0:len(migNameParts)-2], ".")
-		if m, found := migMap[version]; found {
-			if direction == "up" {
-				m.Up = contents
-			} else {
-				m.Down = contents
-			}
-		} else {
-			m := &migration{
-				Version: version,
-				Name:    migrationName,
-			}
-			if direction == "up" {
-				m.Up = contents
-			} else {
-				m.Down = contents
-			}
-			migMap[version] = m
+		if _, found := migMap[version]; found {
+			continue
 		}
+		m, err := ctx.migrationGetSpecific(fo.Name())
+		if err != nil {
+			return nil, err
+		}
+		migMap[m.Version] = m
 	}
-	migrations := []*migration{}
+	migrations := make([]*migration, 0)
 	for _, m := range migMap {
 		migrations = append(migrations, m)
 	}

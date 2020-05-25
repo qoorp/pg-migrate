@@ -14,6 +14,8 @@ const dbTableSchema = `create table if not exists %s (
 			down text not null default ''
 		)`
 
+const dbIndexName = `create index if not exists %s_idx_name on %s(name)`
+
 type execCB func(tx *pqdbr.Tx) error
 
 func (ctx *PQMigrate) dbConnectWithURL(url string) (*pqdbr.Connection, error) {
@@ -225,7 +227,10 @@ func (ctx *PQMigrate) dbDeleteMigration(mig *migration) error {
 
 func (ctx *PQMigrate) dbMigrationsTableExist() error {
 	ctx.dbg("dbMigrationsTableExist")
-	return ctx.dbExecString(fmt.Sprintf(dbTableSchema, ctx.config.MigrationsTable), nil)
+	if err := ctx.dbExecString(fmt.Sprintf(dbTableSchema, ctx.config.MigrationsTable), nil); err != nil {
+		return err
+	}
+	return ctx.dbExecString(fmt.Sprintf(dbIndexName, ctx.config.MigrationsTable, ctx.config.MigrationsTable), nil)
 }
 
 func (ctx *PQMigrate) dbGetMigrated() ([]*migration, error) {
@@ -243,6 +248,38 @@ func (ctx *PQMigrate) dbGetMigrated() ([]*migration, error) {
 		return nil, err
 	}
 	return migrations, nil
+}
+
+func (ctx *PQMigrate) dbGetMigratedByVersion(version uint64) (*migration, error) {
+	ctx.dbg("dbGetMigratedByVersion", version)
+	tx, err := ctx.dbGetTx()
+	if err != nil {
+		return nil, err
+	}
+	migration := &migration{}
+	if err := tx.Select("*").
+		From(ctx.config.MigrationsTable).
+		Where(
+			pqdbr.Eq("version", version),
+		).
+		LoadOne(migration); err != nil {
+		return nil, err
+	}
+	return migration, nil
+}
+
+func (ctx *PQMigrate) dbUpdateMigration(migration *migration) error {
+	tx, err := ctx.dbGetTx()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Update(ctx.config.MigrationsTable).SetMap(map[string]interface{}{
+		"up":   migration.Up,
+		"down": migration.Down,
+	}).Where(
+		pqdbr.Eq("version", migration.Version),
+	).Exec()
+	return err
 }
 
 func (ctx *PQMigrate) dbFinish() error {

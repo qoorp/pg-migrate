@@ -135,6 +135,27 @@ func (ctx *PQMigrate) MigrateDown(steps int) error {
 	return nil
 }
 
+func (ctx *PQMigrate) printDiffLines(lines []string) {
+	for _, line := range lines {
+		if line[0] == '-' {
+			ctx.logger.Warn(line)
+		} else if line[0] == '+' {
+			ctx.logger.Inf(line)
+		} else {
+			ctx.logger.Ok(line)
+		}
+	}
+}
+
+func (ctx *PQMigrate) diffHasChanges(lines []string) bool {
+	for _, line := range lines {
+		if line[0] == '-' || line[0] == '+' {
+			return true
+		}
+	}
+	return false
+}
+
 // Sync tries to synchronize db and fs state by first
 // checking if any migrations have changed on fs, then
 // finding migrations that exist in db but not in fs.
@@ -185,27 +206,11 @@ func (ctx *PQMigrate) Sync(cb ConfirmCB) error {
 			dbMigration := migratedMap[migration.Version]
 			if lines := diff.LineDiffAsLines(dbMigration.Up, migration.Up); len(lines) > 0 {
 				ctx.logger.Warn("================\nUP:\n================")
-				for _, line := range lines {
-					if line[0] == '-' {
-						ctx.logger.Warn(line)
-					} else if line[0] == '+' {
-						ctx.logger.Inf(line)
-					} else {
-						ctx.logger.Ok(line)
-					}
-				}
+				ctx.printDiffLines(lines)
 			}
 			if lines := diff.LineDiffAsLines(dbMigration.Down, migration.Down); len(lines) > 0 {
 				ctx.logger.Warn("================\nDOWN:\n================")
-				for _, line := range lines {
-					if line[0] == '-' {
-						ctx.logger.Warn(line)
-					} else if line[0] == '+' {
-						ctx.logger.Inf(line)
-					} else {
-						ctx.logger.Ok(line)
-					}
-				}
+				ctx.printDiffLines(lines)
 			}
 			if !cb("Shall i migrate down and then up?") {
 				ctx.logger.Warn("skipping migration...")
@@ -251,6 +256,49 @@ func (ctx *PQMigrate) Sync(cb ConfirmCB) error {
 		}
 	} else {
 		ctx.logger.Inf("nothing to migrate")
+	}
+	return nil
+}
+
+// Replace tries to replace a specified migration in the database
+// without running the migration itself. Useful for if a broken `down`
+// migration has found its way into the db and needs to be replaced.
+func (ctx *PQMigrate) Replace(fileName string, cb ConfirmCB) error {
+	ctx.dbg("Replace")
+	if err := ctx.dbMigrationsTableExist(); err != nil {
+		ctx.dbg("Replace", err)
+		return err
+	}
+	nMigration, err := ctx.migrationGetSpecific(fileName)
+	if err != nil {
+		ctx.dbg("Replace", err)
+		return err
+	}
+	mMigration, err := ctx.dbGetMigratedByVersion(nMigration.Version)
+	if err != nil {
+		ctx.dbg("Replace", err)
+		return err
+	}
+	ctx.logger.Warn(mMigration.Name)
+	hasChanges := false
+	if lines := diff.LineDiffAsLines(mMigration.Up, nMigration.Up); len(lines) > 0 {
+		ctx.logger.Warn("================\nUP:\n================")
+		ctx.printDiffLines(lines)
+		hasChanges = ctx.diffHasChanges(lines)
+	}
+	if lines := diff.LineDiffAsLines(mMigration.Down, nMigration.Down); len(lines) > 0 {
+		ctx.logger.Warn("================\nUP:\n================")
+		ctx.printDiffLines(lines)
+		if ctx.diffHasChanges(lines) {
+			hasChanges = true
+		}
+	}
+	if !hasChanges {
+		ctx.logger.Inf("No changes")
+		return nil
+	}
+	if cb("Should i replace this migration?") {
+		return ctx.dbUpdateMigration(nMigration)
 	}
 	return nil
 }

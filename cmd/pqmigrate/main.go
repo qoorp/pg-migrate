@@ -45,6 +45,7 @@ var cmds = map[string]struct {
 	"up":          {f: upCMD, d: "migrating up"},
 	"down":        {f: downCMD, d: "migrating down"},
 	"sync":        {f: syncCMD, d: "syncing database and filesystem"},
+	"replace": {f: replaceCMD, d: "replacing migration"},
 	"create":      {f: createCMD, d: "creating migration files"},
 	"dump-schema": {f: dumpSchemaCMD, d: "dumping database schema"},
 	"dump-full":   {f: dumpFullCMD, d: "dumping database and content"},
@@ -62,6 +63,7 @@ Usage:
   pqmigrate up [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
   pqmigrate down [--url=<url>] [--dir=<dir>] [--steps=<steps>] [--bw] [-d]
   pqmigrate sync [--url=<url>] [--dir=<dir>] [--bw] [-d]
+  pqmigrate replace [--url=<url>] [--dir=<dir>] [--bw] [-d] --name=<name>
   pqmigrate create <name> [--dir=<dir>] [--bw] [-d]
   pqmigrate dump-schema [--dir=<dir>] [--name=<name>] [--bw]
   pqmigrate dump-full [--dir=<dir>] [--name=<name>] [--bw]
@@ -76,6 +78,7 @@ Options:
   -h --help        Show help.
   --help-config	   Show configuration options. [default: false]
   --version        Show version. [default: false]
+  --url=<url>      Postgres url
   --dir=<dir>      Directory where migrations files are stores. [default: migrations/]
   --steps=<steps>  Max steps to migrate [default: 1].
   --bw             No colour (black and white). [default false]
@@ -306,6 +309,18 @@ func downCMD() error {
 func syncCMD() error {
 	ctx := pqmigrate.New(getConfigOrDie())
 	if err := ctx.Sync(confirmCB(confirmY, true)); err != nil {
+		return err
+	}
+	return ctx.Finish()
+}
+
+func replaceCMD() error {
+	ctx := pqmigrate.New(getConfigOrDie())
+	fileName := getArgStringOrNil(argName)
+	if fileName == nil {
+		return fmt.Errorf("please supply a filename to replace")
+	}
+	if err := ctx.Replace(*fileName, confirmCB(confirmY, true)); err != nil {
 		return err
 	}
 	return ctx.Finish()
