@@ -214,6 +214,14 @@ func (ctx *PQMigrate) Sync(cb ConfirmCB) error {
 		ctx.dbg("Sync", err)
 		return err
 	}
+	for _, mig := range migrations {
+		mig.Up = strings.TrimSpace(mig.Up)
+		mig.Down = strings.TrimSpace(mig.Down)
+	}
+	for _, mig := range migrated {
+		mig.Up = strings.TrimSpace(mig.Up)
+		mig.Down = strings.TrimSpace(mig.Down)
+	}
 	// check if any migration has changed on disk
 	migrationsMap := map[uint64]*migration{}
 	migratedMap := map[uint64]*migration{}
@@ -387,7 +395,7 @@ func (ctx *PQMigrate) DumpDBSchemaToFileWithName(schemaName, migrationsName stri
 // migrations file if found next to the schema sql.
 func (ctx *PQMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
 	ctx.dbg("LoadDBSchema")
-	schemaContents, err := ctx.fileGetContents(schemaName)
+	schemaContents, err := ctx.fileGetContentsTrimmed(schemaName)
 	if err != nil {
 		ctx.dbg("LoadDBSchema", err)
 		return err
@@ -397,7 +405,7 @@ func (ctx *PQMigrate) LoadDBSchema(schemaName string, cb ConfirmCB) error {
 	migrateName := re.ReplaceAllString(schemaName, "migrations")
 	ctx.dbg("LoadDBSchema", migrateName)
 	migrations := []*migration{}
-	migrateContents, err := ctx.fileGetContents(migrateName)
+	migrateContents, err := ctx.fileGetContentsTrimmed(migrateName)
 	insertMigrations := false
 	if err == nil {
 		if cb != nil && cb(fmt.Sprintf("found a migrations file '%s'. should these migrations be inserted?", migrateName)) {
@@ -478,6 +486,8 @@ func (ctx *PQMigrate) DumpDBFull(fname *string) error {
 	return nil
 }
 
+// LoadFullDump loads database schema and data from specified file
+// into the given database.
 func (ctx *PQMigrate) LoadFullDump(dumpName string) error {
 	ctx.dbg("LoadFullDump")
 	opts, err := pq.ParseURL(ctx.config.DBUrl)
@@ -498,5 +508,75 @@ func (ctx *PQMigrate) LoadFullDump(dumpName string) error {
 		return err
 	}
 	ctx.logger.Ok(fmt.Sprintf("database restored successfully from '%s'", dumpName))
+	return nil
+}
+
+// Squash takes all migrations present on fs and squashes them into
+// one file. Usable to reduce clutter.
+func (ctx *PQMigrate) Squash(cb ConfirmCB) error {
+	if err := ctx.dbMigrationsTableExist(); err != nil {
+		return err
+	}
+	dbMigrated, err := ctx.dbGetMigrated()
+	if err != nil {
+		return err
+	}
+	fsMigrations, err := ctx.migrationGetAll()
+	if err != nil {
+		return err
+	}
+	migrations := migrationSliceIntersection(dbMigrated, fsMigrations)
+	if len(migrations) == 0 {
+		ctx.logger.Inf("No migrations to squash")
+		return nil
+	}
+	contents, migrationFileNames, err := ctx.migrationSquashAll(migrations)
+	if err != nil {
+		return err
+	}
+	ctx.logger.Inf(fmt.Sprintf("Squashed %d migrations", len(migrations)))
+	if cb("Should i write them to file?") {
+		if err := ctx.fileWriteContents(squashFileName, contents); err != nil {
+			return err
+		}
+		ctx.logger.Inf(fmt.Sprintf("Wrote squashed migrations to %s", squashFileName))
+	}
+	if !cb("Should i remove squashed files?") {
+		return nil
+	}
+	for _, fileName := range migrationFileNames {
+		if err := ctx.fileRemove(fileName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// UnSquash reverses the operations performed of `Squash`. Restores
+// squashed files to their original state.
+func (ctx *PQMigrate) UnSquash(cb ConfirmCB) error {
+	migrations, err := ctx.migrationGetAllSquashed(squashFileName)
+	if err != nil {
+		return err
+	}
+	ctx.logger.Inf(fmt.Sprintf("Unsquashed %d migrations", len(migrations)))
+	if !cb("Should i write them to file?") {
+		return nil
+	}
+	for _, migration := range migrations {
+		upFileName := migration.Name + ".up.sql"
+		downFileName := migration.Name + ".down.sql"
+		if err := ctx.fileWriteContents(upFileName, []byte(migration.Up)); err != nil {
+			return err
+		}
+		if err := ctx.fileWriteContents(downFileName, []byte(migration.Down)); err != nil {
+			return err
+		}
+	}
+	if cb("Should i remove the squash file?") {
+		if err := ctx.fileRemove(squashFileName); err != nil {
+			return err
+		}
+	}
 	return nil
 }

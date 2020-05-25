@@ -1,6 +1,8 @@
 package pqmigrate
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"regexp"
@@ -21,6 +23,7 @@ var (
 	reMigrationName   = regexp.MustCompilePOSIX(`^[a-z0-9][a-z0-9_]+$`)
 	migrationFileRegx = regexp.MustCompilePOSIX(`^[0-9]{10}[^.]+\.(up|down).sql$`)
 	migrationRegx     = regexp.MustCompilePOSIX(`^([0-9]{10}[^.]+)`)
+	squashFileRegx    = regexp.MustCompilePOSIX(squashFileName + "$")
 )
 
 type byVersion []*migration
@@ -42,6 +45,79 @@ func (ctx *PQMigrate) migrationGetVersion(fileName string) (uint64, error) {
 }
 
 var errNotMigrationFile = fmt.Errorf("not a migration file")
+
+func (ctx *PQMigrate) migrationSquash(m *migration) *migration {
+	return &migration{
+		Version: m.Version,
+		Name:    m.Name,
+		Up:      base64.StdEncoding.EncodeToString([]byte(m.Up)),
+		Down:    base64.StdEncoding.EncodeToString([]byte(m.Down)),
+	}
+}
+
+func (ctx *PQMigrate) migrationSquashAll(migrations []*migration) ([]byte, []string, error) {
+	b := make([]byte, 0)
+	buf := bytes.NewBuffer(b)
+	migrationFileNames := make([]string, 0)
+	for _, mig := range migrations {
+		nMig := ctx.migrationSquash(mig)
+		buf.WriteString(nMig.Name)
+		buf.WriteString(squashSep)
+		buf.WriteString(nMig.Up)
+		buf.WriteString(squashSep)
+		buf.WriteString(nMig.Down)
+		buf.WriteString(squashLineSep)
+		migrationFileNames = append(migrationFileNames, nMig.Name+".down.sql")
+		migrationFileNames = append(migrationFileNames, nMig.Name+".up.sql")
+	}
+	return buf.Bytes(), migrationFileNames, nil
+}
+
+func (ctx *PQMigrate) migrationGetSquashed(line string) (*migration, error) {
+	migration := &migration{}
+	contents := strings.Split(line, squashSep)
+	if len(contents) != 3 {
+		ctx.dbg("UnSquash", "wrong number of fields")
+		return nil, fmt.Errorf("corrupt squash file")
+	}
+	migration.Name = contents[0]
+	upBytes, err := base64.StdEncoding.DecodeString(contents[1])
+	if err != nil {
+		ctx.dbg("UnSquash", err)
+		return nil, fmt.Errorf("corrupt squash file")
+	}
+	downBytes, err := base64.StdEncoding.DecodeString(contents[2])
+	if err != nil {
+		return nil, fmt.Errorf("corrupt squash file")
+	}
+	migration.Up = string(upBytes)
+	migration.Down = string(downBytes)
+	version, err := ctx.migrationGetVersion(migration.Name)
+	if err != nil {
+		return nil, fmt.Errorf("corrupt squash file")
+	}
+	migration.Version = version
+	return migration, nil
+}
+
+func (ctx *PQMigrate) migrationGetAllSquashed(fileName string) ([]*migration, error) {
+	migrations := make([]*migration, 0)
+	fc, err := ctx.fileGetContents(fileName)
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range strings.Split(fc, squashLineSep) {
+		if line == "" {
+			continue
+		}
+		m, err := ctx.migrationGetSquashed(line)
+		if err != nil {
+			return nil, err
+		}
+		migrations = append(migrations, m)
+	}
+	return migrations, nil
+}
 
 func (ctx *PQMigrate) migrationGetSpecific(fileName string) (*migration, error) {
 	ctx.dbg("migrationGetSpecific", fileName)
@@ -97,6 +173,16 @@ func (ctx *PQMigrate) migrationGetAll() ([]*migration, error) {
 	migMap := map[uint64]*migration{}
 	for _, fo := range files {
 		if fo.IsDir() {
+			continue
+		}
+		if squashFileRegx.MatchString(fo.Name()) {
+			migrations, err := ctx.migrationGetAllSquashed(fo.Name())
+			if err != nil {
+				return nil, err
+			}
+			for _, migration := range migrations {
+				migMap[migration.Version] = migration
+			}
 			continue
 		}
 		sm := migrationFileRegx.FindStringSubmatch(fo.Name())

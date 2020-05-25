@@ -29,7 +29,15 @@ func (ctx *PQMigrate) fileGetContents(fileName string) (string, error) {
 		ctx.dbg("fileGetContents", err)
 		return "", err
 	}
-	return norm.NFC.String(strings.TrimSpace(string(cb))), nil
+	return norm.NFC.String(string(cb)), nil
+}
+
+func (ctx *PQMigrate) fileGetContentsTrimmed(fileName string) (string, error) {
+	fc, err := ctx.fileGetContents(fileName)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(fc), nil
 }
 
 func (ctx *PQMigrate) fileWriteContents(fileName string, contents []byte) error {
@@ -43,10 +51,20 @@ func (ctx *PQMigrate) fileWriteContents(fileName string, contents []byte) error 
 
 func (ctx *PQMigrate) fileExec(fileName string) error {
 	ctx.dbg("fileExec", fileName)
-	contents, err := ctx.fileGetContents(fileName)
+	contents, err := ctx.fileGetContentsTrimmed(fileName)
 	if err != nil {
 		ctx.dbg("fileExec", err)
 		return err
 	}
 	return ctx.dbExecString(contents, nil)
+}
+
+func (ctx *PQMigrate) fileRemove(fileName string) error {
+	ctx.dbg("fileRemove", fileName)
+	fp := filepath.Join(ctx.config.BaseDirectory, fileName)
+	if err := os.Remove(fp); err != nil {
+		ctx.dbg("fileRemove", err)
+		return err
+	}
+	return nil
 }

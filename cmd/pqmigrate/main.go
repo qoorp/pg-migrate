@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version = "v1.0.3"
+	version = "v1.3.0"
 )
 
 var arguments = map[string]interface{}{}
@@ -52,6 +52,8 @@ var cmds = map[string]struct {
 	"load-schema": {f: loadSchemaCMD, d: "loading database schema"},
 	"load-dump":   {f: loadDumpCMD, d: "loading database dump"},
 	"seed":        {f: seedCMD, d: "seeding database"},
+	"squash":      {f: squashCMD, d: "squashing migrations"},
+	"unsquash":    {f: unSquashCMD, d: "unsquashing migrations"},
 }
 
 func main() {
@@ -70,6 +72,8 @@ Usage:
   pqmigrate load-schema [--dir=<dir>] [--name=<name>] [--bw] [-d]
   pqmigrate load-dump <name> [--dir=<dir>] [--name=<name>] [--bw] [-d]
   pqmigrate seed [--dir=<dir>] [--name=<name>] [--bw] [-d]
+  pqmigrate squash [--dir=<dir>] [--bw]
+  pqmigrate unsquash [--dir=<dir>] [--bw]
   pqmigrate -h | --help
   pqmigrate --help-config
   pqmigrate --version
@@ -388,4 +392,14 @@ func seedCMD() error {
 		return err
 	}
 	return ctx.Finish()
+}
+
+func squashCMD() error {
+	ctx := pqmigrate.New(getConfigOrDie())
+	return ctx.Squash(confirmCB(confirmY, true))
+}
+
+func unSquashCMD() error {
+	ctx := pqmigrate.New(getConfigOrDie())
+	return ctx.UnSquash(confirmCB(confirmY, true))
 }
