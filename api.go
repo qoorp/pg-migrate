@@ -453,7 +453,12 @@ func (ctx *PQMigrate) DumpDBSchemaToFile(fname *string) error {
 }
 
 // DumpDBFull dumps database schema and content to a file named `dump_<timestamp-unix>.sql`
-func (ctx *PQMigrate) DumpDBFull(fname *string) (string, error) {
+func (ctx *PQMigrate) DumpDBFull(fname *string) error {
+	_, err := ctx.DumpDBFullWithPath(fname)
+	return err
+}
+
+func (ctx *PQMigrate) DumpDBFullWithPath(fname *string) (string, error) {
 	ctx.dbg("dumpDBData")
 	cmd := exec.Command("pg_dump", ctx.config.DBUrl, "--no-owner", "--no-acl")
 	if err := ctx.fileEnsureDirExist(ctx.config.BaseDirectory); err != nil {
@@ -484,6 +489,7 @@ func (ctx *PQMigrate) DumpDBFull(fname *string) (string, error) {
 	}
 	ctx.logger.Ok(fmt.Sprintf("database dump written to \"%s\"", fp))
 	return fp, nil
+
 }
 
 // LoadFullDump loads database schema and data from specified file
