@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version = "v1.3.0"
+	version = "v2.0.0"
 )
 
 var arguments = map[string]interface{}{}
@@ -353,7 +353,8 @@ func dumpSchemaCMD() error {
 func dumpFullCMD() error {
 	fileName := getArgStringOrNil(argName)
 	ctx := pqmigrate.New(getConfigOrDie())
-	return ctx.DumpDBFull(fileName)
+	_, err := ctx.DumpDBFull(fileName)
+	return err
 }
 
 func loadSchemaCMD() error {

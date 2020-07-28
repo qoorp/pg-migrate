@@ -453,17 +453,17 @@ func (ctx *PQMigrate) DumpDBSchemaToFile(fname *string) error {
 }
 
 // DumpDBFull dumps database schema and content to a file named `dump_<timestamp-unix>.sql`
-func (ctx *PQMigrate) DumpDBFull(fname *string) error {
+func (ctx *PQMigrate) DumpDBFull(fname *string) (string, error) {
 	ctx.dbg("dumpDBData")
-	cmd := exec.Command("pg_dump", ctx.config.DBUrl, "-O", "--column-inserts")
+	cmd := exec.Command("pg_dump", ctx.config.DBUrl, "--no-owner", "--no-acl")
 	if err := ctx.fileEnsureDirExist(ctx.config.BaseDirectory); err != nil {
-		return err
+		return "", err
 	}
 	fp := filepath.Join(ctx.config.BaseDirectory, getFileNameOrDefault("dump", "sql", fname, nil))
 	file, err := os.OpenFile(fp, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		ctx.dbg("dumpDBData", err)
-		return err
+		return "", err
 	}
 	defer file.Close()
 	r, w := io.Pipe()
@@ -480,10 +480,10 @@ func (ctx *PQMigrate) DumpDBFull(fname *string) error {
 	io.Copy(file, r)
 	if err := <-dc; err != nil {
 		ctx.dbg("dumpDBData", err)
-		return err
+		return "", err
 	}
 	ctx.logger.Ok(fmt.Sprintf("database dump written to \"%s\"", fp))
-	return nil
+	return fp, nil
 }
 
 // LoadFullDump loads database schema and data from specified file
